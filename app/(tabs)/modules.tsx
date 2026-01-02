@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dimensions, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useValen } from '../../src/context/ValenContext';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 // THEME CONSTANTS
 const CREAM_BG = '#F5F5F0';
@@ -12,32 +12,38 @@ const CARD_WHITE = '#FFFFFF';
 const TEXT_DARK = '#1A1A1A';
 const TEXT_GREY = '#8E8E93';
 
+const PREMIUM_ICONS = ['book', 'calculator', 'flask', 'language', 'code-working', 'color-palette', 'globe', 'musical-notes'];
+
 export default function ModulesScreen() {
-  const { modules, addModule, startFocusSession, updateModuleSchedule } = useValen();
+  const { modules, addModule, startFocusSession, pauseFocusSession, updateModuleSchedule, timerState } = useValen();
+  
   const [modalVisible, setModalVisible] = useState(false);
   const [studyModal, setStudyModal] = useState(false);
   const [scheduleModal, setScheduleModal] = useState(false);
-  const [selectedModule, setSelectedModule] = useState<any>(null);
+  const [activeStudyView, setActiveStudyView] = useState(false); // New: Live Timer View
   
-  const [newModule, setNewModule] = useState({ name: '', code: '' });
+  const [selectedModule, setSelectedModule] = useState<any>(null);
+  const [newModule, setNewModule] = useState({ name: '', code: '', icon: 'book' });
   const [topic, setTopic] = useState('');
 
   const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-  const toggleDay = (day: string) => {
-    let currentSched = selectedModule?.schedule || [];
-    if (currentSched.some((s: any) => s.day === day)) {
-      currentSched = currentSched.filter((s: any) => s.day !== day);
-    } else {
-      currentSched.push({ day });
+  // Handle auto-opening the "Live Timer" if a session is started
+  useEffect(() => {
+    if (timerState.isRunning && timerState.activeModuleId) {
+      setActiveStudyView(true);
     }
-    updateModuleSchedule(selectedModule.id, currentSched);
-  };
+  }, [timerState.isRunning]);
 
   const handleStartStudy = () => {
     startFocusSession({ duration: 25, moduleId: selectedModule.id, topic: topic });
     setStudyModal(false);
-    setTopic('');
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
   return (
@@ -50,41 +56,108 @@ export default function ModulesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.gpaCard}>
-          <Text style={styles.gpaLabel}>Total Time Studied</Text>
-          <Text style={styles.gpaValue}>{modules.reduce((acc, m) => acc + (m.hoursDone || 0), 0).toFixed(1)} <Text style={{fontSize: 20}}>hrs</Text></Text>
-          <View style={styles.gpaProgressBase}><View style={[styles.gpaProgressFill, { width: `40%` }]} /></View>
+        {/* FIXED: Now matches other tiles */}
+        <View style={styles.summaryCard}>
+          <View>
+            <Text style={styles.summaryLabel}>Total Study Time</Text>
+            <Text style={styles.summaryValue}>
+              {modules.reduce((acc, m) => acc + (m.hoursDone || 0), 0).toFixed(1)} 
+              <Text style={{fontSize: 18, color: TEXT_GREY}}> hrs</Text>
+            </Text>
+          </View>
+          <View style={styles.summaryCircle}>
+            <Ionicons name="stats-chart" size={24} color={MINT_GREEN} />
+          </View>
         </View>
 
         <View style={styles.grid}>
           {modules.map((m) => (
             <TouchableOpacity key={m.id} style={styles.moduleCard} onPress={() => { setSelectedModule(m); setStudyModal(true); }}>
               <View style={styles.moduleHeader}>
-                <Text style={styles.moduleCode}>{m.code}</Text>
+                <View style={styles.iconBg}><Ionicons name={m.icon || 'book'} size={18} color={MINT_GREEN} /></View>
                 <TouchableOpacity onPress={(e) => { e.stopPropagation(); setSelectedModule(m); setScheduleModal(true); }}>
                    <Ionicons name="calendar" size={18} color={m.schedule?.length > 0 ? MINT_GREEN : "#DDD"} />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.moduleName}>{m.name}</Text>
+              <Text style={styles.moduleName} numberOfLines={1}>{m.name}</Text>
               <View style={styles.moduleFooter}>
-                <Text style={styles.creditsText}>{m.hoursDone?.toFixed(1) || 0}/20 hrs</Text>
-                <Ionicons name="play-circle" size={24} color={MINT_GREEN} />
+                <View style={styles.progressMini}>
+                  <View style={[styles.progressMiniFill, { width: `${Math.min(((m.hoursDone || 0)/20)*100, 100)}%` }]} />
+                </View>
+                <Text style={styles.progressText}>{m.hoursDone?.toFixed(1) || 0}h</Text>
               </View>
             </TouchableOpacity>
           ))}
           <TouchableOpacity style={[styles.moduleCard, styles.dashed]} onPress={() => setModalVisible(true)}>
-             <Ionicons name="school-outline" size={32} color="#CCC" /><Text style={styles.addModuleText}>New Module</Text>
+             <Ionicons name="add" size={32} color="#CCC" />
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* SCHEDULE MODAL */}
+      {/* MODAL: LIVE STUDY TIMER (The "Premium" Screen) */}
+      <Modal visible={activeStudyView} animationType="slide">
+        <SafeAreaView style={styles.timerOverlay}>
+          <TouchableOpacity style={styles.closeTimer} onPress={() => setActiveStudyView(false)}>
+            <Ionicons name="chevron-down" size={30} color={TEXT_DARK} />
+          </TouchableOpacity>
+          
+          <View style={styles.timerContent}>
+            <Text style={styles.timerStatus}>FOCUSING ON</Text>
+            <Text style={styles.timerModuleName}>{modules.find(m => m.id === timerState.activeModuleId)?.name || 'Study Session'}</Text>
+            <Text style={styles.timerTopic}>"{timerState.topic || 'No topic set'}"</Text>
+            
+            <View style={styles.timerBigRing}>
+                <Text style={styles.timerBigDigits}>{formatTime(timerState.timeRemaining)}</Text>
+            </View>
+
+            <View style={styles.timerActions}>
+              <TouchableOpacity style={styles.stopBtn} onPress={() => { pauseFocusSession(); setActiveStudyView(false); }}>
+                <Ionicons name="stop" size={24} color="#FF4B4B" />
+                <Text style={styles.stopText}>Stop</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.pauseBtn} onPress={pauseFocusSession}>
+                <Ionicons name={timerState.isRunning ? "pause" : "play"} size={24} color={MINT_GREEN} />
+                <Text style={styles.pauseText}>{timerState.isRunning ? "Pause" : "Resume"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* MODAL: ADD MODULE WITH ICON PICKER */}
+      <Modal visible={modalVisible} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            <Text style={styles.modalTitle}>New Module</Text>
+            <TextInput style={styles.input} placeholder="Module Name" value={newModule.name} onChangeText={(t) => setNewModule({...newModule, name: t})} />
+            
+            <Text style={styles.label}>Select Icon</Text>
+            <View style={styles.iconPicker}>
+              {PREMIUM_ICONS.map(icon => (
+                <TouchableOpacity 
+                  key={icon} 
+                  onPress={() => setNewModule({...newModule, icon})}
+                  style={[styles.iconChoice, newModule.icon === icon && styles.activeIcon]}
+                >
+                  <Ionicons name={icon as any} size={20} color={newModule.icon === icon ? '#FFF' : TEXT_GREY} />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={() => { if(newModule.name) addModule(newModule); setModalVisible(false); }}>
+              <Text style={styles.saveBtnText}>Create Module</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* SCHEDULE MODAL (Keeping your logic) */}
       <Modal visible={scheduleModal} animationType="fade" transparent>
         <View style={styles.overlay}>
           <View style={[styles.sheet, { height: 500 }]}>
-            <Text style={styles.modalTitle}>Study Schedule: {selectedModule?.code}</Text>
-            <Text style={{color: TEXT_GREY, marginBottom: 20}}>Select days to be reminded to study.</Text>
-            <View style={{ width: '100%' }}>
+            <Text style={styles.modalTitle}>Schedule: {selectedModule?.code}</Text>
+            <View style={{ width: '100%', marginTop: 10 }}>
               {weekdays.map(day => {
                 const isActive = selectedModule?.schedule?.some((s: any) => s.day === day);
                 return (
@@ -99,34 +172,6 @@ export default function ModulesScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* MODAL: START STUDY SESSION */}
-      <Modal visible={studyModal} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            <Text style={styles.modalTitle}>Study {selectedModule?.code}</Text>
-            <TextInput style={styles.input} placeholder="What topic are we focusing on?" value={topic} onChangeText={setTopic} />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleStartStudy}>
-              <Text style={styles.saveBtnText}>Start Pomodoro (25m)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setStudyModal(false)} style={{marginTop: 15}}><Text style={{color: '#AAA'}}>Cancel</Text></TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL: ADD MODULE */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            <Text style={styles.modalTitle}>Add New Module</Text>
-            <TextInput style={styles.input} placeholder="Module Name" value={newModule.name} onChangeText={(t) => setNewModule({...newModule, name: t})} />
-            <TextInput style={styles.input} placeholder="Module Code" value={newModule.code} onChangeText={(t) => setNewModule({...newModule, code: t})} />
-            <TouchableOpacity style={styles.saveBtn} onPress={() => { if(newModule.name) addModule(newModule); setModalVisible(false); }}>
-              <Text style={styles.saveBtnText}>Create Module</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -137,28 +182,51 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', color: TEXT_DARK },
   addBtn: { backgroundColor: CARD_WHITE, padding: 8, borderRadius: 12 },
   scrollContent: { padding: 20 },
-  gpaCard: { backgroundColor: TEXT_DARK, borderRadius: 24, padding: 25, marginBottom: 20 },
-  gpaLabel: { fontSize: 14, color: TEXT_GREY, fontWeight: '600' },
-  gpaValue: { fontSize: 42, fontWeight: '900', color: '#FFF' },
-  gpaProgressBase: { height: 6, backgroundColor: '#333', borderRadius: 3, marginTop: 15 },
-  gpaProgressFill: { height: 6, backgroundColor: MINT_GREEN, borderRadius: 3 },
+  
+  // Summary Card Fix
+  summaryCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 25, marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 13, color: TEXT_GREY, fontWeight: '600' },
+  summaryValue: { fontSize: 32, fontWeight: '900', color: TEXT_DARK, marginTop: 4 },
+  summaryCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F0FAF9', justifyContent: 'center', alignItems: 'center' },
+
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  moduleCard: { backgroundColor: CARD_WHITE, width: (width - 55) / 2, height: 160, borderRadius: 24, padding: 20, marginBottom: 15, justifyContent: 'space-between' },
-  moduleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  moduleCard: { backgroundColor: CARD_WHITE, width: (width - 55) / 2, height: 150, borderRadius: 24, padding: 18, marginBottom: 15, justifyContent: 'space-between' },
+  moduleHeader: { flexDirection: 'row', justifyContent: 'space-between' },
+  iconBg: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center' },
   moduleCode: { fontSize: 10, fontWeight: '800', color: TEXT_GREY },
-  moduleName: { fontSize: 16, fontWeight: '700', color: TEXT_DARK, marginTop: 10 },
-  moduleFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  gradeBadge: { backgroundColor: '#F0FAF9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  gradeText: { fontSize: 11, fontWeight: '700', color: MINT_GREEN },
-  creditsText: { fontSize: 11, color: TEXT_GREY, fontWeight: '600' },
+  moduleName: { fontSize: 15, fontWeight: '700', color: TEXT_DARK },
+  moduleFooter: { gap: 8 },
+  progressMini: { height: 4, backgroundColor: '#F5F5F0', borderRadius: 2, overflow: 'hidden' },
+  progressMiniFill: { height: '100%', backgroundColor: MINT_GREEN },
+  progressText: { fontSize: 10, fontWeight: '700', color: TEXT_GREY },
   dashed: { borderWidth: 2, borderColor: '#EEE', borderStyle: 'dashed', backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
-  addModuleText: { color: '#CCC', fontWeight: '700', marginTop: 10 },
+
+  // Timer View
+  timerOverlay: { flex: 1, backgroundColor: CREAM_BG },
+  closeTimer: { padding: 20 },
+  timerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 30, paddingTop: 40 },
+  timerStatus: { fontSize: 12, fontWeight: '800', color: MINT_GREEN, letterSpacing: 2 },
+  timerModuleName: { fontSize: 28, fontWeight: '900', color: TEXT_DARK, marginTop: 10, textAlign: 'center' },
+  timerTopic: { fontSize: 16, color: TEXT_GREY, marginTop: 5 },
+  timerBigRing: { width: 250, height: 250, borderRadius: 125, borderWeight: 15, borderColor: MINT_GREEN, borderStyle: 'solid', justifyContent: 'center', alignItems: 'center', marginVertical: 60, backgroundColor: '#FFF', elevation: 10 },
+  timerBigDigits: { fontSize: 54, fontWeight: '900', color: TEXT_DARK },
+  timerActions: { flexDirection: 'row', gap: 20 },
+  stopBtn: { backgroundColor: '#FFE5E5', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
+  stopText: { color: '#FF4B4B', fontWeight: '800', marginLeft: 10 },
+  pauseBtn: { backgroundColor: '#F0FAF9', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
+  pauseText: { color: MINT_GREEN, fontWeight: '800', marginLeft: 10 },
+
+  // Modals
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFF', padding: 25, borderTopLeftRadius: 30, borderTopRightRadius: 30, height: 400, alignItems: 'center' },
-  modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 5, color: TEXT_DARK },
-  dayRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', padding: 12, borderRadius: 12, marginBottom: 4 },
+  sheet: { backgroundColor: '#FFF', padding: 25, borderTopLeftRadius: 32, borderTopRightRadius: 32, alignItems: 'center' },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: TEXT_DARK, marginBottom: 20 },
+  input: { backgroundColor: '#F5F5F0', padding: 18, borderRadius: 15, width: '100%', marginBottom: 20 },
+  label: { alignSelf: 'flex-start', fontSize: 12, fontWeight: '800', color: TEXT_GREY, marginBottom: 15, textTransform: 'uppercase' },
+  iconPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 30, justifyContent: 'center' },
+  iconChoice: { width: 45, height: 45, borderRadius: 12, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center' },
+  activeIcon: { backgroundColor: MINT_GREEN },
+  saveBtn: { backgroundColor: MINT_GREEN, height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', width: '100%' },
+  saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  dayRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', padding: 14, borderRadius: 12, marginBottom: 4 },
   dayRowText: { fontSize: 16, fontWeight: '600', color: TEXT_DARK },
-  input: { backgroundColor: '#F5F5F0', padding: 15, borderRadius: 12, marginBottom: 15, width: '100%' },
-  saveBtn: { backgroundColor: MINT_GREEN, height: 55, borderRadius: 15, justifyContent: 'center', alignItems: 'center', width: '100%', marginTop: 20 },
-  saveBtnText: { color: '#FFF', fontWeight: '700', fontSize: 16 }
 });

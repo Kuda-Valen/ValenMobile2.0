@@ -1,24 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  ScrollView,
-  SafeAreaView,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useValen } from '../../src/context/ValenContext';
 
-const DARK_BG = '#000000';
-const CARD_BG = '#1C1C1E';
-const VANILLA = '#F3E5AB';
-const TEXT_SECONDARY = '#8E8E93';
+// CONSISTENT THEME CONSTANTS
+const CREAM_BG = '#F5F5F0'; 
+const CARD_WHITE = '#FFFFFF';
+const MINT_GREEN = '#00BFA5';
+const TEXT_DARK = '#1A1A1A';
+const TEXT_GREY = '#8E8E93';
 
 const AVAILABLE_FEATURES = [
   { id: 'tasks', label: 'Task Engine', icon: 'checkmark-circle-outline' },
@@ -80,7 +81,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.headerTitle}>Profile</Text>
 
         {/* Avatar Section */}
@@ -90,34 +91,40 @@ export default function ProfileScreen() {
               <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={40} color={DARK_BG} />
+                <Ionicons name="person" size={40} color={MINT_GREEN} />
               </View>
             )}
             <View style={styles.editBadge}>
-              <Ionicons name="camera" size={16} color={DARK_BG} />
+              <Ionicons name="camera" size={16} color={CARD_WHITE} />
             </View>
           </TouchableOpacity>
           <Text style={styles.emailText}>{profile?.email}</Text>
         </View>
 
-        {/* Inputs */}
+        {/* Personal Info Group */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Personal Info</Text>
           <View style={styles.inputGroup}>
-            <TextInput
-              style={styles.input}
-              placeholder="Display Name"
-              placeholderTextColor={TEXT_SECONDARY}
-              value={name}
-              onChangeText={setName}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Profession"
-              placeholderTextColor={TEXT_SECONDARY}
-              value={profession}
-              onChangeText={setProfession}
-            />
+            <View style={styles.inputWrapper}>
+               <Ionicons name="person-outline" size={18} color={TEXT_GREY} style={styles.inputIcon} />
+               <TextInput
+                 style={styles.input}
+                 placeholder="Display Name"
+                 placeholderTextColor={TEXT_GREY}
+                 value={name}
+                 onChangeText={setName}
+               />
+            </View>
+            <View style={[styles.inputWrapper, styles.noBorder]}>
+               <Ionicons name="briefcase-outline" size={18} color={TEXT_GREY} style={styles.inputIcon} />
+               <TextInput
+                 style={styles.input}
+                 placeholder="Profession"
+                 placeholderTextColor={TEXT_GREY}
+                 value={profession}
+                 onChangeText={setProfession}
+               />
+            </View>
           </View>
         </View>
 
@@ -135,8 +142,8 @@ export default function ProfileScreen() {
                 >
                   <Ionicons
                     name={feature.icon as any}
-                    size={20}
-                    color={isActive ? DARK_BG : VANILLA}
+                    size={18}
+                    color={isActive ? CARD_WHITE : TEXT_GREY}
                   />
                   <Text style={[styles.featureText, isActive && styles.featureTextActive]}>
                     {feature.label}
@@ -153,7 +160,11 @@ export default function ProfileScreen() {
           onPress={() => handleSave()}
           disabled={updating}
         >
-          {updating ? <ActivityIndicator color={DARK_BG} /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
+          {updating ? (
+            <ActivityIndicator color={CARD_WHITE} />
+          ) : (
+            <Text style={styles.saveButtonText}>Save Changes</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.logoutButton} onPress={logout}>
@@ -165,30 +176,42 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DARK_BG },
-  scrollContent: { padding: 20 },
-  headerTitle: { color: '#FFF', fontSize: 34, fontWeight: '800', marginBottom: 30 },
+  container: { flex: 1, backgroundColor: CREAM_BG },
+  scrollContent: { padding: 20, paddingBottom: 40 },
+  headerTitle: { color: TEXT_DARK, fontSize: 32, fontWeight: '800', marginBottom: 25 },
   
   avatarContainer: { alignItems: 'center', marginBottom: 30 },
-  imageWrapper: { width: 100, height: 100, borderRadius: 50, position: 'relative' },
-  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 2, borderColor: VANILLA },
-  avatarPlaceholder: { width: 100, height: 100, borderRadius: 50, backgroundColor: VANILLA, justifyContent: 'center', alignItems: 'center' },
-  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: VANILLA, width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: DARK_BG },
-  emailText: { color: TEXT_SECONDARY, marginTop: 10, fontSize: 14 },
+  imageWrapper: { 
+    width: 110, 
+    height: 110, 
+    borderRadius: 55, 
+    elevation: 4, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.1, 
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }
+  },
+  avatar: { width: 110, height: 110, borderRadius: 55, borderWidth: 3, borderColor: CARD_WHITE },
+  avatarPlaceholder: { width: 110, height: 110, borderRadius: 55, backgroundColor: CARD_WHITE, justifyContent: 'center', alignItems: 'center' },
+  editBadge: { position: 'absolute', bottom: 2, right: 2, backgroundColor: MINT_GREEN, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: CARD_WHITE },
+  emailText: { color: TEXT_GREY, marginTop: 12, fontSize: 14, fontWeight: '500' },
 
-  section: { marginBottom: 25 },
-  sectionLabel: { color: TEXT_SECONDARY, fontSize: 13, textTransform: 'uppercase', fontWeight: '600', marginBottom: 10, marginLeft: 5 },
-  inputGroup: { backgroundColor: CARD_BG, borderRadius: 15, padding: 5 },
-  input: { color: '#FFF', height: 50, paddingHorizontal: 15, fontSize: 16 },
+  section: { marginBottom: 30 },
+  sectionLabel: { color: TEXT_GREY, fontSize: 12, textTransform: 'uppercase', fontWeight: '700', letterSpacing: 1, marginBottom: 12, marginLeft: 4 },
+  inputGroup: { backgroundColor: CARD_WHITE, borderRadius: 20, paddingVertical: 5, paddingHorizontal: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: CREAM_BG },
+  noBorder: { borderBottomWidth: 0 },
+  inputIcon: { marginRight: 10 },
+  input: { color: TEXT_DARK, flex: 1, height: 55, fontSize: 16, fontWeight: '500' },
 
   featureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  featureItem: { backgroundColor: CARD_BG, paddingVertical: 12, paddingHorizontal: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderSize: 1, borderColor: '#333' },
-  featureItemActive: { backgroundColor: VANILLA },
-  featureText: { color: '#FFF', fontWeight: '600' },
-  featureTextActive: { color: DARK_BG },
+  featureItem: { backgroundColor: CARD_WHITE, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 8, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05 },
+  featureItemActive: { backgroundColor: MINT_GREEN },
+  featureText: { color: TEXT_GREY, fontWeight: '600', fontSize: 14 },
+  featureTextActive: { color: CARD_WHITE },
 
-  saveButton: { backgroundColor: VANILLA, height: 55, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
-  saveButtonText: { color: DARK_BG, fontSize: 16, fontWeight: '700' },
+  saveButton: { backgroundColor: MINT_GREEN, height: 58, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 10, elevation: 4, shadowColor: MINT_GREEN, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  saveButtonText: { color: CARD_WHITE, fontSize: 16, fontWeight: '700' },
   logoutButton: { marginTop: 20, alignItems: 'center', padding: 15 },
-  logoutText: { color: '#FF453A', fontSize: 16, fontWeight: '600' }
+  logoutText: { color: '#FF4B4B', fontSize: 16, fontWeight: '700' }
 });

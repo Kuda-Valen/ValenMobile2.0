@@ -27,6 +27,7 @@ interface ValenContextType {
   modules: any[];
   startFocusSession: (config: { duration: number, moduleId?: string, topic?: string }) => void;
   pauseFocusSession: () => void;
+  stopFocusSession: () => void; // Added for premium control
   addTask: (taskData: any) => Promise<void>;
   addFolder: (name: string, icon: string) => Promise<void>;
   addModule: (moduleData: any) => Promise<void>;
@@ -85,11 +86,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const unsubFolders = onSnapshot(folderCol, (snap) => {
       const folderList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (folderList.length === 0) {
-        const defaults = [
-          { name: 'School', icon: 'book' }, 
-          { name: 'Personal', icon: 'person' }, 
-          { name: 'Work', icon: 'briefcase' }
-        ];
+        const defaults = [{ name: 'School', icon: 'book' }, { name: 'Personal', icon: 'person' }, { name: 'Work', icon: 'briefcase' }];
         defaults.forEach(f => addFolder(f.name, f.icon));
       } else {
         setFolders(folderList);
@@ -104,19 +101,12 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => { unsubProfile(); unsubTasks(); unsubFolders(); unsubModules(); };
   }, [user]);
 
-  // --- FIXED: ADDED MISSING addFolder FUNCTION ---
   const addFolder = async (name: string, icon: string) => {
     if (!user) return;
     try {
       const folderCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders');
-      await addDoc(folderCol, { 
-        name, 
-        icon, 
-        createdAt: serverTimestamp() 
-      });
-    } catch (e) { 
-      console.error("Error adding folder:", e); 
-    }
+      await addDoc(folderCol, { name, icon, createdAt: serverTimestamp() });
+    } catch (e) { console.error(e); }
   };
 
   const addModule = async (moduleData: any) => {
@@ -177,8 +167,13 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const handleSessionEnd = async (finalState: TimerState) => {
     if (!user || !finalState.activeModuleId) return;
     const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
-    await updateDoc(modRef, { hoursDone: increment(0.4) });
-    Alert.alert("Focus Complete", "Great study session!");
+    const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+    
+    // Increment hours in module AND daily minutes in profile
+    await updateDoc(modRef, { hoursDone: increment(0.42) }); // ~25 mins
+    await updateDoc(profRef, { dailyFocusMinutes: increment(25) });
+    
+    Alert.alert("Session Complete", "You just moved your focus ring!");
   };
 
   const pauseFocusSession = () => {
@@ -186,12 +181,23 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setTimerState((prev) => ({ ...prev, isRunning: false }));
   };
 
+  const stopFocusSession = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimerState({
+      timeRemaining: 1500,
+      isRunning: false,
+      currentPhase: 'Study',
+      activeModuleId: undefined,
+      topic: undefined
+    });
+  };
+
   const logout = () => auth.signOut();
 
   return (
     <ValenContext.Provider value={{ 
       user, profile, loading, timerState, tasks, folders, modules,
-      startFocusSession, pauseFocusSession, addTask, addFolder, addModule, toggleTaskCompletion, updateModuleSchedule, logout 
+      startFocusSession, pauseFocusSession, stopFocusSession, addTask, addFolder, addModule, toggleTaskCompletion, updateModuleSchedule, logout 
     }}>
       {children}
     </ValenContext.Provider>
