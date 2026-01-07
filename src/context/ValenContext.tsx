@@ -1,9 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
-  addDoc, collection, doc,
+  addDoc, collection,
+  deleteDoc,
+  doc,
   increment,
-  onSnapshot, serverTimestamp, updateDoc
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp, updateDoc
 } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
@@ -25,12 +30,18 @@ interface ValenContextType {
   tasks: any[];
   folders: any[];
   modules: any[];
+  religiousActivities: any[];
+  fitnessActivities: any[]; // NEW
   startFocusSession: (config: { duration: number, moduleId?: string, topic?: string }) => void;
   pauseFocusSession: () => void;
-  stopFocusSession: () => void; // Added for premium control
+  stopFocusSession: () => void;
   addTask: (taskData: any) => Promise<void>;
   addFolder: (name: string, icon: string) => Promise<void>;
   addModule: (moduleData: any) => Promise<void>;
+  addReligiousActivity: (activity: any) => Promise<void>;
+  deleteReligiousActivity: (id: string) => Promise<void>;
+  addFitnessActivity: (activity: any) => Promise<void>; // NEW
+  deleteFitnessActivity: (id: string) => Promise<void>; // NEW
   toggleTaskCompletion: (taskId: string, currentStatus: boolean) => Promise<void>;
   updateModuleSchedule: (moduleId: string, schedule: any) => Promise<void>;
   logout: () => Promise<void>;
@@ -45,6 +56,8 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [tasks, setTasks] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [modules, setModules] = useState<any[]>([]);
+  const [religiousActivities, setReligiousActivities] = useState<any[]>([]);
+  const [fitnessActivities, setFitnessActivities] = useState<any[]>([]); // NEW
 
   const [timerState, setTimerState] = useState<TimerState>({
     timeRemaining: 1500,
@@ -62,6 +75,8 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTasks([]);
         setFolders([]);
         setModules([]);
+        setReligiousActivities([]);
+        setFitnessActivities([]); // Reset NEW
         setLoading(false);
       }
     });
@@ -71,17 +86,20 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!user) return;
     
+    // 1. Profile Listener
     const profileDoc = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
     const unsubProfile = onSnapshot(profileDoc, (snap) => {
       if (snap.exists()) setProfile(snap.data());
       setLoading(false);
     });
 
+    // 2. Tasks Listener
     const taskCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks');
     const unsubTasks = onSnapshot(taskCol, (snap) => {
       setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    // 3. Folders Listener
     const folderCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders');
     const unsubFolders = onSnapshot(folderCol, (snap) => {
       const folderList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -93,13 +111,37 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
+    // 4. Modules Listener
     const moduleCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules');
     const unsubModules = onSnapshot(moduleCol, (snap) => {
       setModules(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    return () => { unsubProfile(); unsubTasks(); unsubFolders(); unsubModules(); };
+    // 5. Faith/Religious Listener
+    const religiousCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious');
+    const religiousQuery = query(religiousCol, orderBy('createdAt', 'desc'));
+    const unsubReligious = onSnapshot(religiousQuery, (snap) => {
+      setReligiousActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // 6. Fitness Listener (NEW)
+    const fitnessCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness');
+    const fitnessQuery = query(fitnessCol, orderBy('createdAt', 'desc'));
+    const unsubFitness = onSnapshot(fitnessQuery, (snap) => {
+      setFitnessActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => { 
+      unsubProfile(); 
+      unsubTasks(); 
+      unsubFolders(); 
+      unsubModules(); 
+      unsubReligious();
+      unsubFitness(); // NEW
+    };
   }, [user]);
+
+  // --- ACTIONS ---
 
   const addFolder = async (name: string, icon: string) => {
     if (!user) return;
@@ -123,6 +165,46 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) { console.error(e); }
   };
 
+  const addTask = async (taskData: any) => {
+    if (!user) return;
+    const taskCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks');
+    await addDoc(taskCol, { ...taskData, completed: false, createdAt: serverTimestamp() });
+  };
+
+  const addReligiousActivity = async (activity: any) => {
+    if (!user) return;
+    try {
+      const col = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious');
+      await addDoc(col, { ...activity, createdAt: serverTimestamp() });
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteReligiousActivity = async (id: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious', id);
+      await deleteDoc(docRef);
+    } catch (e) { console.error(e); }
+  };
+
+  // NEW: Add Fitness Activity
+  const addFitnessActivity = async (activity: any) => {
+    if (!user) return;
+    try {
+      const col = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness');
+      await addDoc(col, { ...activity, createdAt: serverTimestamp() });
+    } catch (e) { console.error(e); }
+  };
+
+  // NEW: Delete Fitness Activity
+  const deleteFitnessActivity = async (id: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness', id);
+      await deleteDoc(docRef);
+    } catch (e) { console.error(e); }
+  };
+
   const updateModuleSchedule = async (moduleId: string, schedule: any) => {
     if (!user) return;
     const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', moduleId);
@@ -136,11 +218,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateDoc(taskRef, { completed: !currentStatus, updatedAt: serverTimestamp() });
   };
 
-  const addTask = async (taskData: any) => {
-    if (!user) return;
-    const taskCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks');
-    await addDoc(taskCol, { ...taskData, completed: false, createdAt: serverTimestamp() });
-  };
+  // --- TIMER LOGIC ---
 
   const startFocusSession = (config: { duration: number, moduleId?: string, topic?: string }) => {
     setTimerState((prev) => ({ 
@@ -169,8 +247,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
     const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
     
-    // Increment hours in module AND daily minutes in profile
-    await updateDoc(modRef, { hoursDone: increment(0.42) }); // ~25 mins
+    await updateDoc(modRef, { hoursDone: increment(0.42) }); 
     await updateDoc(profRef, { dailyFocusMinutes: increment(25) });
     
     Alert.alert("Session Complete", "You just moved your focus ring!");
@@ -196,8 +273,10 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <ValenContext.Provider value={{ 
-      user, profile, loading, timerState, tasks, folders, modules,
-      startFocusSession, pauseFocusSession, stopFocusSession, addTask, addFolder, addModule, toggleTaskCompletion, updateModuleSchedule, logout 
+      user, profile, loading, timerState, tasks, folders, modules, religiousActivities, fitnessActivities,
+      startFocusSession, pauseFocusSession, stopFocusSession, addTask, addFolder, addModule, 
+      addReligiousActivity, deleteReligiousActivity, addFitnessActivity, deleteFitnessActivity,
+      toggleTaskCompletion, updateModuleSchedule, logout 
     }}>
       {children}
     </ValenContext.Provider>
