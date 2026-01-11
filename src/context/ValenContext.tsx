@@ -1,4 +1,5 @@
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
   addDoc, collection,
@@ -11,8 +12,17 @@ import {
   serverTimestamp, updateDoc
 } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { auth, db, VALEN_APP_ID } from '../services/firebase';
+
+// Configure notifications to show when app is in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 interface TimerState {
   timeRemaining: number;
@@ -20,6 +30,8 @@ interface TimerState {
   currentPhase: 'Study' | 'Break';
   activeModuleId?: string;
   topic?: string;
+  isPomodoro: boolean;
+  initialDuration: number;
 }
 
 interface ValenContextType {
@@ -31,18 +43,35 @@ interface ValenContextType {
   folders: any[];
   modules: any[];
   religiousActivities: any[];
-  fitnessActivities: any[]; // NEW
-  startFocusSession: (config: { duration: number, moduleId?: string, topic?: string }) => void;
+  fitnessActivities: any[];
+  financialData: { transactions: any[], goals: any[] };
+  visions: any[];
+  startFocusSession: (moduleId?: string) => void; 
   pauseFocusSession: () => void;
   stopFocusSession: () => void;
+  stopAndSaveSession: (summary?: string) => Promise<void>;
+  resetTimer: () => void;
+  setTimerConfig: (isPomodoro: boolean, minutes: number) => void;
+  setSessionTopic: (topic: string) => void;
+  selectModule: (moduleId: string) => void;
   addTask: (taskData: any) => Promise<void>;
   addFolder: (name: string, icon: string) => Promise<void>;
   addModule: (moduleData: any) => Promise<void>;
   addReligiousActivity: (activity: any) => Promise<void>;
   deleteReligiousActivity: (id: string) => Promise<void>;
-  addFitnessActivity: (activity: any) => Promise<void>; // NEW
-  deleteFitnessActivity: (id: string) => Promise<void>; // NEW
+  addFitnessActivity: (activity: any) => Promise<void>;
+  deleteFitnessActivity: (id: string) => Promise<void>;
+  addTransaction: (data: any) => Promise<void>;
+  addFinancialGoal: (data: any) => Promise<void>;
+  deleteFinancialItem: (id: string, type: 'transactions' | 'goals') => Promise<void>;
+  updateGoalProgress: (goalId: string, amount: number) => Promise<void>;
+  addVision: (visionData: any) => Promise<void>;
+  deleteVision: (id: string) => Promise<void>;
+  updateVisionProgress: (id: string, progress: number) => Promise<void>;
   toggleTaskCompletion: (taskId: string, currentStatus: boolean) => Promise<void>;
+  toggleFaithCompletion: (id: string, currentStatus: boolean) => Promise<void>;
+  toggleFitnessCompletion: (id: string, currentStatus: boolean) => Promise<void>;
+  resetModuleDailyStatus: (moduleId: string) => Promise<void>;
   updateModuleSchedule: (moduleId: string, schedule: any) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -57,15 +86,30 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [folders, setFolders] = useState<any[]>([]);
   const [modules, setModules] = useState<any[]>([]);
   const [religiousActivities, setReligiousActivities] = useState<any[]>([]);
-  const [fitnessActivities, setFitnessActivities] = useState<any[]>([]); // NEW
+  const [fitnessActivities, setFitnessActivities] = useState<any[]>([]);
+  const [financialData, setFinancialData] = useState<{ transactions: any[], goals: any[] }>({ transactions: [], goals: [] });
+  const [visions, setVisions] = useState<any[]>([]);
 
   const [timerState, setTimerState] = useState<TimerState>({
     timeRemaining: 1500,
     isRunning: false,
     currentPhase: 'Study',
+    isPomodoro: true,
+    initialDuration: 1500,
   });
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'web') {
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+        }
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -76,7 +120,9 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setFolders([]);
         setModules([]);
         setReligiousActivities([]);
-        setFitnessActivities([]); // Reset NEW
+        setFitnessActivities([]);
+        setFinancialData({ transactions: [], goals: [] });
+        setVisions([]);
         setLoading(false);
       }
     });
@@ -86,20 +132,17 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!user) return;
     
-    // 1. Profile Listener
     const profileDoc = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
     const unsubProfile = onSnapshot(profileDoc, (snap) => {
       if (snap.exists()) setProfile(snap.data());
       setLoading(false);
     });
 
-    // 2. Tasks Listener
     const taskCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks');
     const unsubTasks = onSnapshot(taskCol, (snap) => {
       setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // 3. Folders Listener
     const folderCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders');
     const unsubFolders = onSnapshot(folderCol, (snap) => {
       const folderList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -111,172 +154,276 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // 4. Modules Listener
     const moduleCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules');
     const unsubModules = onSnapshot(moduleCol, (snap) => {
       setModules(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // 5. Faith/Religious Listener
     const religiousCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious');
-    const religiousQuery = query(religiousCol, orderBy('createdAt', 'desc'));
-    const unsubReligious = onSnapshot(religiousQuery, (snap) => {
+    const unsubReligious = onSnapshot(query(religiousCol, orderBy('createdAt', 'desc')), (snap) => {
       setReligiousActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // 6. Fitness Listener (NEW)
     const fitnessCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness');
-    const fitnessQuery = query(fitnessCol, orderBy('createdAt', 'desc'));
-    const unsubFitness = onSnapshot(fitnessQuery, (snap) => {
+    const unsubFitness = onSnapshot(query(fitnessCol, orderBy('createdAt', 'desc')), (snap) => {
       setFitnessActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    const basePath = ['artifacts', VALEN_APP_ID, 'users', user.uid];
+    const unsubTrans = onSnapshot(query(collection(db, ...basePath, 'transactions'), orderBy('createdAt', 'desc')), (snap) => {
+      const transactions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setFinancialData(prev => ({ ...prev, transactions }));
+    });
+
+    const unsubGoals = onSnapshot(collection(db, ...basePath, 'fin_goals'), (snap) => {
+      const goals = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setFinancialData(prev => ({ ...prev, goals }));
+    });
+
+    const visionsCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'visions');
+    const unsubVisions = onSnapshot(query(visionsCol, orderBy('createdAt', 'desc')), (snap) => {
+      setVisions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => { 
-      unsubProfile(); 
-      unsubTasks(); 
-      unsubFolders(); 
-      unsubModules(); 
-      unsubReligious();
-      unsubFitness(); // NEW
+      unsubProfile(); unsubTasks(); unsubFolders(); unsubModules(); unsubReligious();
+      unsubFitness(); unsubTrans(); unsubGoals(); unsubVisions();
     };
   }, [user]);
 
-  // --- ACTIONS ---
-
   const addFolder = async (name: string, icon: string) => {
     if (!user) return;
-    try {
-      const folderCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders');
-      await addDoc(folderCol, { name, icon, createdAt: serverTimestamp() });
-    } catch (e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders'), { name, icon, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
   };
 
   const addModule = async (moduleData: any) => {
     if (!user) return;
-    try {
-      const moduleCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules');
-      await addDoc(moduleCol, { 
-        ...moduleData, 
-        currentGrade: 0, 
-        hoursDone: 0, 
-        schedule: [], 
-        createdAt: serverTimestamp() 
-      });
-    } catch (e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules'), { ...moduleData, currentGrade: 0, hoursDone: 0, schedule: [], createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
   };
 
   const addTask = async (taskData: any) => {
     if (!user) return;
-    const taskCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks');
-    await addDoc(taskCol, { ...taskData, completed: false, createdAt: serverTimestamp() });
+    await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks'), { ...taskData, completed: false, createdAt: serverTimestamp() });
   };
 
   const addReligiousActivity = async (activity: any) => {
     if (!user) return;
-    try {
-      const col = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious');
-      await addDoc(col, { ...activity, createdAt: serverTimestamp() });
-    } catch (e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious'), { ...activity, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
   };
 
   const deleteReligiousActivity = async (id: string) => {
     if (!user) return;
-    try {
-      const docRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious', id);
-      await deleteDoc(docRef);
-    } catch (e) { console.error(e); }
+    try { await deleteDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious', id)); } catch (e) { console.error(e); }
   };
 
-  // NEW: Add Fitness Activity
   const addFitnessActivity = async (activity: any) => {
     if (!user) return;
-    try {
-      const col = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness');
-      await addDoc(col, { ...activity, createdAt: serverTimestamp() });
-    } catch (e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness'), { ...activity, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
   };
 
-  // NEW: Delete Fitness Activity
   const deleteFitnessActivity = async (id: string) => {
     if (!user) return;
-    try {
-      const docRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness', id);
-      await deleteDoc(docRef);
-    } catch (e) { console.error(e); }
+    try { await deleteDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness', id)); } catch (e) { console.error(e); }
+  };
+
+  const addTransaction = async (data: any) => {
+    if (!user) return;
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'transactions'), { ...data, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
+  };
+
+  const addFinancialGoal = async (data: any) => {
+    if (!user) return;
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fin_goals'), { ...data, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
+  };
+
+  const deleteFinancialItem = async (id: string, type: 'transactions' | 'goals') => {
+    if (!user) return;
+    try { await deleteDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, type === 'transactions' ? 'transactions' : 'fin_goals', id)); } catch (e) { console.error(e); }
+  };
+
+  const updateGoalProgress = async (goalId: string, amount: number) => {
+    if (!user) return;
+    try { await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fin_goals', goalId), { current: increment(amount) }); } catch (e) { console.error(e); }
+  };
+
+  const addVision = async (data: any) => {
+    if (!user) return;
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'visions'), { ...data, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
+  };
+
+  const deleteVision = async (id: string) => {
+    if (!user) return;
+    try { await deleteDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'visions', id)); } catch (e) { console.error(e); }
+  };
+
+  const updateVisionProgress = async (id: string, progress: number) => {
+    if (!user) return;
+    try { await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'visions', id), { progress }); } catch (e) { console.error(e); }
   };
 
   const updateModuleSchedule = async (moduleId: string, schedule: any) => {
     if (!user) return;
-    const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', moduleId);
-    await updateDoc(modRef, { schedule });
+    await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', moduleId), { schedule });
   };
 
   const toggleTaskCompletion = async (taskId: string, currentStatus: boolean) => {
     if (!user) return;
-    const taskRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks', taskId);
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await updateDoc(taskRef, { completed: !currentStatus, updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks', taskId), { completed: !currentStatus, updatedAt: serverTimestamp() });
+  };
+
+  const toggleFaithCompletion = async (id: string, currentStatus: boolean) => {
+    if (!user) return;
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious', id), { completed: !currentStatus });
+  };
+
+  const toggleFitnessCompletion = async (id: string, currentStatus: boolean) => {
+    if (!user) return;
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness', id), { completed: !currentStatus });
+  };
+
+  const resetModuleDailyStatus = async (moduleId: string) => {
+    if (!user) return;
+    await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', moduleId), { completedToday: false });
   };
 
   // --- TIMER LOGIC ---
+  const selectModule = (moduleId: string) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimerState(prev => ({
+      ...prev,
+      isRunning: false,
+      currentPhase: 'Study',
+      activeModuleId: moduleId,
+      timeRemaining: prev.initialDuration
+    }));
+  };
 
-  const startFocusSession = (config: { duration: number, moduleId?: string, topic?: string }) => {
+  const setTimerConfig = (isPomodoro: boolean, minutes: number) => {
+    setTimerState(prev => ({ 
+      ...prev, 
+      isPomodoro, 
+      currentPhase: 'Study',
+      timeRemaining: minutes * 60, 
+      initialDuration: minutes * 60 
+    }));
+  };
+
+  const setSessionTopic = (topic: string) => {
+    setTimerState(prev => ({ ...prev, topic }));
+  };
+
+  const resetTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    // If resetting from a break, go back to study
+    setTimerState(prev => ({ 
+      ...prev, 
+      isRunning: false, 
+      currentPhase: 'Study',
+      timeRemaining: prev.initialDuration 
+    }));
+  };
+
+  const startFocusSession = (moduleId?: string) => {
     setTimerState((prev) => ({ 
       ...prev, 
       isRunning: true, 
-      timeRemaining: config.duration * 60,
-      activeModuleId: config.moduleId,
-      topic: config.topic 
+      activeModuleId: moduleId || prev.activeModuleId 
     }));
     
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setTimerState((prev) => {
-        if (prev.timeRemaining <= 0) {
+        if (prev.timeRemaining <= 1) {
           clearInterval(timerRef.current!);
-          handleSessionEnd(prev);
-          return { ...prev, isRunning: false, timeRemaining: 0 };
+          
+          if (prev.currentPhase === 'Study') {
+            // Study ended -> Auto transition to Break
+            if (Platform.OS !== 'web') {
+              Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "Study Session Complete! ☕️",
+                  body: "Time for a 5-minute break. Great work!",
+                  sound: true,
+                },
+                trigger: null,
+              });
+            }
+            handleSessionEnd(prev);
+            return { 
+                ...prev, 
+                isRunning: true, // Auto-start the break
+                currentPhase: 'Break', 
+                timeRemaining: 300, // 5 minute break
+                initialDuration: 300 
+            };
+          } else {
+            // Break ended
+            if (Platform.OS !== 'web') {
+              Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "Break Over! 🧠",
+                  body: "Ready for another round of focus?",
+                  sound: true,
+                },
+                trigger: null,
+              });
+            }
+            return { ...prev, isRunning: false, timeRemaining: 0 };
+          }
         }
         return { ...prev, timeRemaining: prev.timeRemaining - 1 };
       });
     }, 1000);
   };
 
-  const handleSessionEnd = async (finalState: TimerState) => {
-    if (!user || !finalState.activeModuleId) return;
-    const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
-    const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
-    
-    await updateDoc(modRef, { hoursDone: increment(0.42) }); 
-    await updateDoc(profRef, { dailyFocusMinutes: increment(25) });
-    
-    Alert.alert("Session Complete", "You just moved your focus ring!");
+  const stopAndSaveSession = async (summary?: string) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const finalState = { ...timerState };
+    setTimerState(prev => ({ ...prev, isRunning: false, activeModuleId: undefined }));
+    await handleSessionEnd(finalState, summary);
   };
 
-  const pauseFocusSession = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setTimerState((prev) => ({ ...prev, isRunning: false }));
+  const handleSessionEnd = async (finalState: TimerState, summary?: string) => {
+    if (!user || !finalState.activeModuleId || finalState.currentPhase === 'Break') return;
+    
+    const secondsSpent = finalState.initialDuration - finalState.timeRemaining;
+    if (secondsSpent < 5) return;
+
+    try {
+      const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
+      const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+      
+      await updateDoc(modRef, { hoursDone: increment(secondsSpent / 3600), completedToday: true });
+      await updateDoc(profRef, { dailyFocusMinutes: increment(secondsSpent / 60) });
+
+      await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'focus_history'), {
+        moduleId: finalState.activeModuleId,
+        topic: finalState.topic || 'General Study',
+        summary: summary || '',
+        durationSeconds: secondsSpent,
+        timestamp: serverTimestamp()
+      });
+
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) { console.error(e); }
   };
 
-  const stopFocusSession = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setTimerState({
-      timeRemaining: 1500,
-      isRunning: false,
-      currentPhase: 'Study',
-      activeModuleId: undefined,
-      topic: undefined
-    });
-  };
+  const pauseFocusSession = () => { if (timerRef.current) clearInterval(timerRef.current); setTimerState(prev => ({ ...prev, isRunning: false })); };
+  const stopFocusSession = () => { if (timerRef.current) clearInterval(timerRef.current); setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', timeRemaining: prev.initialDuration, activeModuleId: undefined })); };
 
   const logout = () => auth.signOut();
 
   return (
     <ValenContext.Provider value={{ 
-      user, profile, loading, timerState, tasks, folders, modules, religiousActivities, fitnessActivities,
-      startFocusSession, pauseFocusSession, stopFocusSession, addTask, addFolder, addModule, 
-      addReligiousActivity, deleteReligiousActivity, addFitnessActivity, deleteFitnessActivity,
-      toggleTaskCompletion, updateModuleSchedule, logout 
+      user, profile, loading, timerState, tasks, folders, modules, religiousActivities, fitnessActivities, financialData, visions,
+      startFocusSession, pauseFocusSession, stopFocusSession, stopAndSaveSession, resetTimer, setTimerConfig, setSessionTopic, selectModule,
+      addTask, addFolder, addModule, addReligiousActivity, deleteReligiousActivity, addFitnessActivity, deleteFitnessActivity,
+      addTransaction, addFinancialGoal, deleteFinancialItem, updateGoalProgress,
+      addVision, deleteVision, updateVisionProgress, toggleTaskCompletion, 
+      toggleFaithCompletion, toggleFitnessCompletion, resetModuleDailyStatus, updateModuleSchedule, logout 
     }}>
       {children}
     </ValenContext.Provider>

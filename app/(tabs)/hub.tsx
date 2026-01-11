@@ -2,14 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
-    Dimensions,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Dimensions,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useValen } from '../../src/context/ValenContext';
 
@@ -24,11 +24,12 @@ const TEXT_GREY = '#8E8E93';
 
 export default function HubScreen() {
   const router = useRouter();
-  const { religiousActivities, fitnessActivities } = useValen();
+  const { religiousActivities, fitnessActivities, visions } = useValen();
 
   // Dynamic counts for tile badges
   const faithCount = religiousActivities.length;
   const fitnessCount = fitnessActivities.length;
+  const visionCount = visions?.length || 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -54,10 +55,12 @@ export default function HubScreen() {
           {/* LARGE TILE: FINANCIALS */}
           <TouchableOpacity 
             style={[styles.tile, styles.largeTile]}
-            onPress={() => console.log('Navigate to Financials')}
+            onPress={() => router.push('/finance')}
           >
-            <View style={styles.iconContainer}>
-                <Ionicons name="cash" size={28} color={MINT_GREEN} />
+            <View style={styles.smallTileHeader}>
+                <View style={styles.iconContainer}>
+                    <Ionicons name="cash" size={28} color={MINT_GREEN} />
+                </View>
             </View>
             <View>
               <Text style={styles.tileTitle}>Financials</Text>
@@ -82,7 +85,7 @@ export default function HubScreen() {
               <Text style={styles.tileTitleSmall}>Faith</Text>
             </TouchableOpacity>
 
-            {/* SMALL TILE: FITNESS (UPDATED) */}
+            {/* SMALL TILE: FITNESS */}
             <TouchableOpacity 
               style={[styles.tile, styles.smallTile]}
               onPress={() => router.push('/fitness')}
@@ -102,14 +105,35 @@ export default function HubScreen() {
           {/* WIDE TILE: GOALS */}
           <TouchableOpacity 
             style={[styles.tile, styles.wideTile]}
-            onPress={() => console.log('Navigate to Goals')}
+            onPress={() => router.push('/goals')}
           >
             <View style={styles.wideInfo}>
-              <Text style={styles.tileTitle}>Goal Setting</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.tileTitle}>Goal Setting</Text>
+                {visionCount > 0 && (
+                  <View style={[styles.badge, { marginLeft: 10 }]}>
+                    <Text style={styles.badgeText}>{visionCount}</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.tileSubText}>Vision Board & Milestones</Text>
             </View>
             <View style={styles.circleIcon}>
                 <Ionicons name="trophy" size={20} color={MINT_GREEN} />
+            </View>
+          </TouchableOpacity>
+
+          {/* WIDE TILE: PERFORMANCE ANALYTICS (FIXED COLOR) */}
+          <TouchableOpacity 
+            style={[styles.tile, styles.wideTile]}
+            onPress={() => router.push('/analytics')}
+          >
+            <View style={styles.wideInfo}>
+              <Text style={styles.tileTitle}>Performance</Text>
+              <Text style={styles.tileSubText}>Deep Work & Consistency Reports</Text>
+            </View>
+            <View style={styles.circleIcon}>
+                <Ionicons name="pulse" size={20} color={MINT_GREEN} />
             </View>
           </TouchableOpacity>
 
@@ -134,14 +158,11 @@ export default function HubScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: CREAM_BG },
   scrollContent: { padding: 20 },
-  
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   greeting: { fontSize: 13, color: TEXT_GREY, fontWeight: '500' },
   userName: { fontSize: 24, fontWeight: '800', color: TEXT_DARK },
   avatarPlaceholder: { width: 42, height: 42, borderRadius: 21, backgroundColor: CARD_WHITE, justifyContent: 'center', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  
   tile: { 
     backgroundColor: CARD_WHITE, 
     borderRadius: 24, 
@@ -154,20 +175,15 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 }
   },
-  
   largeTile: { width: (width - 55) * 0.58, height: 180 },
   rightColumn: { width: (width - 55) * 0.38, justifyContent: 'space-between' },
   smallTile: { width: '100%', height: 82, padding: 15 },
   smallTileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  
   badge: { backgroundColor: MINT_GREEN, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   badgeText: { color: 'white', fontSize: 10, fontWeight: '800' },
-
   wideTile: { width: '100%', height: 100, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 25 },
-  
   iconContainer: { backgroundColor: '#F0FAF9', width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
   circleIcon: { backgroundColor: '#F0FAF9', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  
   wideInfo: { flex: 1 },
   tileTitle: { fontSize: 18, fontWeight: '800', color: TEXT_DARK },
   tileTitleSmall: { fontSize: 14, fontWeight: '700', color: TEXT_DARK, marginTop: 8 },
