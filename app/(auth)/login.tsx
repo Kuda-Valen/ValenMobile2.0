@@ -38,7 +38,12 @@ export default function LoginScreen() {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
+        // Get today's date in YYYY-MM-DD format for the initial reset marker
+        const today = new Date().toISOString().split('T')[0];
+
         const profileDocRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+        
+        // INITIALIZING FULL PROFILE FOR ANALYTICS READINESS
         await setDoc(profileDocRef, {
           name: username,
           profession: '',
@@ -46,6 +51,11 @@ export default function LoginScreen() {
           selectedFeatures: ['tasks', 'academic'],
           email: user.email,
           createdAt: serverTimestamp(),
+          // CRITICAL FIELDS FOR DAILY RINGS & ANALYTICS
+          lastResetDate: today, 
+          dailyFocusMinutes: 0,
+          archetype: 'The Novice',
+          totalFocusHours: 0,
         });
       }
     } catch (error: any) {

@@ -9,13 +9,14 @@ import {
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp, updateDoc
+  serverTimestamp, updateDoc,
+  writeBatch
 } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { auth, db, VALEN_APP_ID } from '../services/firebase';
 
-// Configure notifications to show when app is in foreground
+// Notifications configuration
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -100,6 +101,67 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // --- MIDNIGHT RESET & NEURAL CONTEXT GENERATOR ---
+  const checkDailyReset = async (currentUser: User, currentProfile: any) => {
+    if (!currentProfile?.lastResetDate) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const lastReset = currentProfile.lastResetDate;
+
+    if (lastReset !== today) {
+      console.log("Valen Core: Synthesizing Daily Neural Context...");
+      const batch = writeBatch(db);
+      const profileRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', currentUser.uid, 'profile', 'data');
+      const snapshotCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', currentUser.uid, 'daily_snapshots');
+
+      try {
+        // 1. Calculate stats for archiving
+        const totalHabits = religiousActivities.length + fitnessActivities.length;
+        const completedHabits = religiousActivities.filter(a => a.completed).length + fitnessActivities.filter(a => a.completed).length;
+        const disciplineScore = totalHabits > 0 ? (completedHabits / totalHabits) : 0;
+        const focusMins = currentProfile?.dailyFocusMinutes || 0;
+
+        // 2. Generate the String Summary for AI Memory
+        const disciplineStatus = disciplineScore >= 0.8 ? "High Discipline" : disciplineScore > 0.4 ? "Moderate Discipline" : "Low Discipline";
+        const focusStatus = focusMins >= 120 ? "Deep Academic Volume" : focusMins > 30 ? "Light Focus" : "Negligible Focus";
+        
+        const neuralSummary = `USER_SESSION_REPORT: Date ${lastReset}. Focus: ${focusMins}m (${focusStatus}). Disciplines: ${completedHabits}/${totalHabits} (${disciplineStatus}). Overall Performance: ${currentProfile.archetype || 'The Novice'}.`;
+        
+        // 3. Archive to snapshot collection
+        const snapshotRef = doc(snapshotCol, lastReset);
+        batch.set(snapshotRef, {
+            date: lastReset,
+            focusMinutes: focusMins,
+            disciplineScore: disciplineScore,
+            neuralContext: neuralSummary, // String recorded for future AI analysis
+            archetypeAtTime: currentProfile?.archetype || 'The Novice',
+            timestamp: serverTimestamp()
+        });
+
+        // 4. Reset Profile counters for the next day
+        batch.update(profileRef, {
+            dailyFocusMinutes: 0,
+            lastResetDate: today
+        });
+
+        // 5. Reset Daily Habit completion status
+        religiousActivities.forEach(act => {
+            const ref = doc(db, 'artifacts', VALEN_APP_ID, 'users', currentUser.uid, 'religious', act.id);
+            batch.update(ref, { completed: false });
+        });
+        fitnessActivities.forEach(act => {
+            const ref = doc(db, 'artifacts', VALEN_APP_ID, 'users', currentUser.uid, 'fitness', act.id);
+            batch.update(ref, { completed: false });
+        });
+
+        await batch.commit();
+        console.log("Valen Core: Daily Reset Complete. Context Archived.");
+      } catch (e) {
+        console.error("Valen Core Error: Reset failed: ", e);
+      }
+    }
+  };
+
   useEffect(() => {
     (async () => {
       if (Platform.OS !== 'web') {
@@ -115,14 +177,9 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (!u) {
-        setProfile(null);
-        setTasks([]);
-        setFolders([]);
-        setModules([]);
-        setReligiousActivities([]);
-        setFitnessActivities([]);
-        setFinancialData({ transactions: [], goals: [] });
-        setVisions([]);
+        setProfile(null); setTasks([]); setFolders([]); setModules([]);
+        setReligiousActivities([]); setFitnessActivities([]);
+        setFinancialData({ transactions: [], goals: [] }); setVisions([]);
         setLoading(false);
       }
     });
@@ -134,7 +191,11 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     const profileDoc = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
     const unsubProfile = onSnapshot(profileDoc, (snap) => {
-      if (snap.exists()) setProfile(snap.data());
+      if (snap.exists()) {
+          const data = snap.data();
+          setProfile(data);
+          checkDailyReset(user, data); 
+      }
       setLoading(false);
     });
 
@@ -191,6 +252,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [user]);
 
+  // --- STANDARD ACTIONS ---
   const addFolder = async (name: string, icon: string) => {
     if (!user) return;
     try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders'), { name, icon, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
@@ -208,7 +270,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addReligiousActivity = async (activity: any) => {
     if (!user) return;
-    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious'), { ...activity, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious'), { ...activity, createdAt: serverTimestamp(), completed: false }); } catch (e) { console.error(e); }
   };
 
   const deleteReligiousActivity = async (id: string) => {
@@ -218,7 +280,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addFitnessActivity = async (activity: any) => {
     if (!user) return;
-    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness'), { ...activity, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness'), { ...activity, createdAt: serverTimestamp(), completed: false }); } catch (e) { console.error(e); }
   };
 
   const deleteFitnessActivity = async (id: string) => {
@@ -292,85 +354,33 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // --- TIMER LOGIC ---
   const selectModule = (moduleId: string) => {
     if (timerRef.current) clearInterval(timerRef.current);
-    setTimerState(prev => ({
-      ...prev,
-      isRunning: false,
-      currentPhase: 'Study',
-      activeModuleId: moduleId,
-      timeRemaining: prev.initialDuration
-    }));
+    setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', activeModuleId: moduleId, timeRemaining: prev.initialDuration }));
   };
 
   const setTimerConfig = (isPomodoro: boolean, minutes: number) => {
-    setTimerState(prev => ({ 
-      ...prev, 
-      isPomodoro, 
-      currentPhase: 'Study',
-      timeRemaining: minutes * 60, 
-      initialDuration: minutes * 60 
-    }));
+    setTimerState(prev => ({ ...prev, isPomodoro, currentPhase: 'Study', timeRemaining: minutes * 60, initialDuration: minutes * 60 }));
   };
 
-  const setSessionTopic = (topic: string) => {
-    setTimerState(prev => ({ ...prev, topic }));
-  };
+  const setSessionTopic = (topic: string) => { setTimerState(prev => ({ ...prev, topic })); };
 
   const resetTimer = () => {
     if (timerRef.current) clearInterval(timerRef.current);
-    // If resetting from a break, go back to study
-    setTimerState(prev => ({ 
-      ...prev, 
-      isRunning: false, 
-      currentPhase: 'Study',
-      timeRemaining: prev.initialDuration 
-    }));
+    setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', timeRemaining: prev.initialDuration }));
   };
 
   const startFocusSession = (moduleId?: string) => {
-    setTimerState((prev) => ({ 
-      ...prev, 
-      isRunning: true, 
-      activeModuleId: moduleId || prev.activeModuleId 
-    }));
-    
+    setTimerState((prev) => ({ ...prev, isRunning: true, activeModuleId: moduleId || prev.activeModuleId }));
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setTimerState((prev) => {
         if (prev.timeRemaining <= 1) {
           clearInterval(timerRef.current!);
-          
           if (prev.currentPhase === 'Study') {
-            // Study ended -> Auto transition to Break
-            if (Platform.OS !== 'web') {
-              Notifications.scheduleNotificationAsync({
-                content: {
-                  title: "Study Session Complete! ☕️",
-                  body: "Time for a 5-minute break. Great work!",
-                  sound: true,
-                },
-                trigger: null,
-              });
-            }
+            if (Platform.OS !== 'web') { Notifications.scheduleNotificationAsync({ content: { title: "Study Session Complete! ☕️", body: "Time for a 5-minute break. Great work!", sound: true }, trigger: null }); }
             handleSessionEnd(prev);
-            return { 
-                ...prev, 
-                isRunning: true, // Auto-start the break
-                currentPhase: 'Break', 
-                timeRemaining: 300, // 5 minute break
-                initialDuration: 300 
-            };
+            return { ...prev, isRunning: true, currentPhase: 'Break', timeRemaining: 300, initialDuration: 300 };
           } else {
-            // Break ended
-            if (Platform.OS !== 'web') {
-              Notifications.scheduleNotificationAsync({
-                content: {
-                  title: "Break Over! 🧠",
-                  body: "Ready for another round of focus?",
-                  sound: true,
-                },
-                trigger: null,
-              });
-            }
+            if (Platform.OS !== 'web') { Notifications.scheduleNotificationAsync({ content: { title: "Break Over! 🧠", body: "Ready for another round of focus?", sound: true }, trigger: null }); }
             return { ...prev, isRunning: false, timeRemaining: 0 };
           }
         }
@@ -388,25 +398,14 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const handleSessionEnd = async (finalState: TimerState, summary?: string) => {
     if (!user || !finalState.activeModuleId || finalState.currentPhase === 'Break') return;
-    
     const secondsSpent = finalState.initialDuration - finalState.timeRemaining;
     if (secondsSpent < 5) return;
-
     try {
       const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
       const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
-      
       await updateDoc(modRef, { hoursDone: increment(secondsSpent / 3600), completedToday: true });
       await updateDoc(profRef, { dailyFocusMinutes: increment(secondsSpent / 60) });
-
-      await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'focus_history'), {
-        moduleId: finalState.activeModuleId,
-        topic: finalState.topic || 'General Study',
-        summary: summary || '',
-        durationSeconds: secondsSpent,
-        timestamp: serverTimestamp()
-      });
-
+      await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'focus_history'), { moduleId: finalState.activeModuleId, topic: finalState.topic || 'General Study', summary: summary || '', durationSeconds: secondsSpent, timestamp: serverTimestamp() });
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) { console.error(e); }
   };
