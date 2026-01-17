@@ -35,6 +35,13 @@ interface TimerState {
   initialDuration: number;
 }
 
+// Success State Interface
+interface SuccessState {
+  visible: boolean;
+  type: 'SESSION_COMPLETE' | 'RINGS_CLOSED';
+  data?: any;
+}
+
 interface ValenContextType {
   user: User | null;
   profile: any;
@@ -47,6 +54,8 @@ interface ValenContextType {
   fitnessActivities: any[];
   financialData: { transactions: any[], goals: any[] };
   visions: any[];
+  showSuccess: SuccessState; // New
+  closeSuccessModal: () => void; // New
   startFocusSession: (moduleId?: string) => void; 
   pauseFocusSession: () => void;
   stopFocusSession: () => void;
@@ -91,6 +100,9 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [financialData, setFinancialData] = useState<{ transactions: any[], goals: any[] }>({ transactions: [], goals: [] });
   const [visions, setVisions] = useState<any[]>([]);
 
+  // Gamification State
+  const [showSuccess, setShowSuccess] = useState<SuccessState>({ visible: false, type: 'SESSION_COMPLETE' });
+
   const [timerState, setTimerState] = useState<TimerState>({
     timeRemaining: 1500,
     isRunning: false,
@@ -100,6 +112,8 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const closeSuccessModal = () => setShowSuccess({ ...showSuccess, visible: false });
 
   // --- MIDNIGHT RESET & NEURAL CONTEXT GENERATOR ---
   const checkDailyReset = async (currentUser: User, currentProfile: any) => {
@@ -115,36 +129,31 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const snapshotCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', currentUser.uid, 'daily_snapshots');
 
       try {
-        // 1. Calculate stats for archiving
         const totalHabits = religiousActivities.length + fitnessActivities.length;
         const completedHabits = religiousActivities.filter(a => a.completed).length + fitnessActivities.filter(a => a.completed).length;
         const disciplineScore = totalHabits > 0 ? (completedHabits / totalHabits) : 0;
         const focusMins = currentProfile?.dailyFocusMinutes || 0;
 
-        // 2. Generate the String Summary for AI Memory
         const disciplineStatus = disciplineScore >= 0.8 ? "High Discipline" : disciplineScore > 0.4 ? "Moderate Discipline" : "Low Discipline";
         const focusStatus = focusMins >= 120 ? "Deep Academic Volume" : focusMins > 30 ? "Light Focus" : "Negligible Focus";
         
         const neuralSummary = `USER_SESSION_REPORT: Date ${lastReset}. Focus: ${focusMins}m (${focusStatus}). Disciplines: ${completedHabits}/${totalHabits} (${disciplineStatus}). Overall Performance: ${currentProfile.archetype || 'The Novice'}.`;
         
-        // 3. Archive to snapshot collection
         const snapshotRef = doc(snapshotCol, lastReset);
         batch.set(snapshotRef, {
             date: lastReset,
             focusMinutes: focusMins,
             disciplineScore: disciplineScore,
-            neuralContext: neuralSummary, // String recorded for future AI analysis
+            neuralContext: neuralSummary,
             archetypeAtTime: currentProfile?.archetype || 'The Novice',
             timestamp: serverTimestamp()
         });
 
-        // 4. Reset Profile counters for the next day
         batch.update(profileRef, {
             dailyFocusMinutes: 0,
             lastResetDate: today
         });
 
-        // 5. Reset Daily Habit completion status
         religiousActivities.forEach(act => {
             const ref = doc(db, 'artifacts', VALEN_APP_ID, 'users', currentUser.uid, 'religious', act.id);
             batch.update(ref, { completed: false });
@@ -403,10 +412,36 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
       const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+      
       await updateDoc(modRef, { hoursDone: increment(secondsSpent / 3600), completedToday: true });
       await updateDoc(profRef, { dailyFocusMinutes: increment(secondsSpent / 60) });
-      await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'focus_history'), { moduleId: finalState.activeModuleId, topic: finalState.topic || 'General Study', summary: summary || '', durationSeconds: secondsSpent, timestamp: serverTimestamp() });
+      
+      await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'focus_history'), { 
+        moduleId: finalState.activeModuleId, 
+        topic: finalState.topic || 'General Study', 
+        summary: summary || '', 
+        durationSeconds: secondsSpent, 
+        timestamp: serverTimestamp() 
+      });
+
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // --- TRIGGER SUCCESS MODAL ---
+      const academicGoal = 240; // Example: 4 hours
+      const updatedFocusMins = (profile?.dailyFocusMinutes || 0) + (secondsSpent / 60);
+      const totalHabits = religiousActivities.length + fitnessActivities.length;
+      const completedHabits = religiousActivities.filter(a => a.completed).length + fitnessActivities.filter(a => a.completed).length;
+
+      if (updatedFocusMins >= academicGoal && completedHabits === totalHabits && totalHabits > 0) {
+        setShowSuccess({ visible: true, type: 'RINGS_CLOSED' });
+      } else {
+        setShowSuccess({ 
+          visible: true, 
+          type: 'SESSION_COMPLETE', 
+          data: { minutes: Math.round(secondsSpent / 60), topic: finalState.topic || 'General Study' } 
+        });
+      }
+
     } catch (e) { console.error(e); }
   };
 
@@ -418,6 +453,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ValenContext.Provider value={{ 
       user, profile, loading, timerState, tasks, folders, modules, religiousActivities, fitnessActivities, financialData, visions,
+      showSuccess, closeSuccessModal,
       startFocusSession, pauseFocusSession, stopFocusSession, stopAndSaveSession, resetTimer, setTimerConfig, setSessionTopic, selectModule,
       addTask, addFolder, addModule, addReligiousActivity, deleteReligiousActivity, addFitnessActivity, deleteFitnessActivity,
       addTransaction, addFinancialGoal, deleteFinancialItem, updateGoalProgress,

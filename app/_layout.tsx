@@ -1,11 +1,12 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-// Note the path: ../src/context/ValenContext
 import { ValenProvider, useValen } from '../src/context/ValenContext';
+// Import the component we created
+import { SuccessModal } from '../components/SuccessModal';
 
 function RootLayoutNav() {
-  const { user, loading } = useValen();
+  const { user, loading, showSuccess, closeSuccessModal } = useValen();
   const segments = useSegments();
   const router = useRouter();
 
@@ -30,10 +31,20 @@ function RootLayoutNav() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#F5F5F0' } }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#F5F5F0' } }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+
+      {/* THE GLOBAL SUCCESS OVERLAY */}
+      <SuccessModal 
+        isVisible={showSuccess.visible}
+        type={showSuccess.type}
+        data={showSuccess.data}
+        onClose={closeSuccessModal}
+      />
+    </View>
   );
 }
 
