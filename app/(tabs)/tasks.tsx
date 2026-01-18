@@ -12,7 +12,9 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import AddTaskModal from '../../components/AddTaskModal';
 import { useValen } from '../../src/context/ValenContext';
+import { NotificationService } from '../../src/services/NotificationService'; // Import the service
 
 const { width, height } = Dimensions.get('window');
 const CREAM_BG = '#F5F5F0';
@@ -29,10 +31,8 @@ export default function TasksScreen() {
   const [folderModalVisible, setFolderModalVisible] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
-  // Task Creation States (within folder)
+  // Universal Add Task State
   const [taskModalVisible, setTaskModalVisible] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskPriority, setTaskPriority] = useState('Medium');
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -41,15 +41,38 @@ export default function TasksScreen() {
     setFolderModalVisible(false);
   };
 
-  const handleSaveTask = async () => {
-    if (!taskTitle || !selectedFolder) return;
-    await addTask({
-      title: taskTitle,
-      folder: selectedFolder,
-      priority: taskPriority,
-      dueDate: new Date().getDate(), // Default to today for quick add
-    });
-    setTaskTitle('');
+  const handleSaveTask = async (taskData: any) => {
+    // 1. Save to Database
+    const newTask = {
+      title: taskData.title,
+      folder: taskData.folder,
+      priority: taskData.priority,
+      dueDate: taskData.date,
+      dueTime: taskData.time || null
+    };
+    
+    await addTask(newTask);
+
+    // 2. Schedule Notification if time and date are valid
+    if (taskData.time && taskData.fullDate) {
+      try {
+        const [hours, minutes] = taskData.time.split(':');
+        const reminderDate = new Date(taskData.fullDate);
+        reminderDate.setHours(parseInt(hours), parseInt(minutes), 0);
+
+        // Only schedule if the selected time is in the future
+        if (reminderDate > new Date()) {
+          await NotificationService.scheduleTaskReminder(
+            Math.random().toString(), // Identifier for the notification
+            taskData.title,
+            reminderDate
+          );
+        }
+      } catch (error) {
+        console.error("Failed to schedule notification:", error);
+      }
+    }
+
     setTaskModalVisible(false);
   };
 
@@ -58,12 +81,16 @@ export default function TasksScreen() {
   };
 
   const activeTasks = tasks.filter(t => t.folder === selectedFolder);
+  const currentMonth = new Date().toLocaleString('default', { month: 'short' });
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Collections</Text>
-        <TouchableOpacity style={styles.addFolderBtn} onPress={() => setFolderModalVisible(true)}>
+        <TouchableOpacity 
+          style={styles.addFolderBtn} 
+          onPress={() => setTaskModalVisible(true)}
+        >
           <Ionicons name="add" size={24} color={MINT_GREEN} />
         </TouchableOpacity>
       </View>
@@ -118,6 +145,15 @@ export default function TasksScreen() {
         </View>
       </Modal>
 
+      {/* UNIVERSAL TASK ADD MODAL */}
+      <AddTaskModal 
+        visible={taskModalVisible}
+        onClose={() => setTaskModalVisible(false)}
+        folders={folders}
+        onSave={handleSaveTask}
+        initialFolder={selectedFolder || 'Personal'}
+      />
+
       {/* MODAL: FOLDER DETAIL VIEW */}
       <Modal visible={!!selectedFolder} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -145,14 +181,13 @@ export default function TasksScreen() {
                   </TouchableOpacity>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.taskTitle, item.completed && styles.strikethrough]}>{item.title}</Text>
-                    <Text style={styles.taskSub}>{item.priority} • Due Dec {item.dueDate}</Text>
+                    <Text style={styles.taskSub}>{item.priority} • Due {currentMonth} {item.dueDate}</Text>
                   </View>
                 </View>
               )}
               ListEmptyComponent={<Text style={styles.emptyText}>No tasks here yet.</Text>}
             />
 
-            {/* ADD TASK BUTTON INSIDE FOLDER */}
             <TouchableOpacity 
               style={styles.folderAddBtn} 
               onPress={() => setTaskModalVisible(true)}
@@ -162,30 +197,6 @@ export default function TasksScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* NESTED MODAL: QUICK ADD TASK */}
-        <Modal visible={taskModalVisible} animationType="fade" transparent>
-          <View style={styles.modalOverlayCenter}>
-            <View style={styles.smallModalSheet}>
-              <Text style={styles.modalHeading}>Task in {selectedFolder}</Text>
-              <TextInput 
-                style={styles.input}
-                placeholder="What's the task?"
-                value={taskTitle}
-                onChangeText={setTaskTitle}
-                autoFocus
-              />
-              <View style={styles.modalActions}>
-                <TouchableOpacity onPress={() => setTaskModalVisible(false)} style={styles.cancelBtn}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleSaveTask} style={styles.createBtn}>
-                  <Text style={styles.createText}>Add Task</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </Modal>
     </SafeAreaView>
   );
@@ -206,7 +217,6 @@ const styles = StyleSheet.create({
   folderCount: { fontSize: 12, color: TEXT_GREY, marginTop: 4 },
   dottedBorder: { borderWidth: 2, borderColor: '#E5E5E0', borderStyle: 'dashed', backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
   addText: { color: TEXT_GREY, fontWeight: '600', marginTop: 10 },
-  
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   smallModalSheet: { backgroundColor: '#FFF', width: '85%', borderRadius: 24, padding: 24 },
@@ -217,7 +227,6 @@ const styles = StyleSheet.create({
   cancelText: { color: TEXT_GREY, fontWeight: '600' },
   createBtn: { flex: 2, backgroundColor: MINT_GREEN, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   createText: { color: '#FFF', fontWeight: '700' },
-
   detailSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: height * 0.85, padding: 25 },
   detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25 },
   detailTitle: { fontSize: 26, fontWeight: '800', color: TEXT_DARK },
@@ -229,19 +238,6 @@ const styles = StyleSheet.create({
   strikethrough: { textDecorationLine: 'line-through', color: TEXT_GREY },
   taskSub: { fontSize: 12, color: TEXT_GREY, marginTop: 2 },
   emptyText: { textAlign: 'center', marginTop: 40, color: TEXT_GREY },
-
-  folderAddBtn: { 
-    backgroundColor: MINT_GREEN, 
-    flexDirection: 'row', 
-    height: 56, 
-    borderRadius: 18, 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    marginTop: 10,
-    shadowColor: MINT_GREEN,
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 12
-  },
+  folderAddBtn: { backgroundColor: MINT_GREEN, flexDirection: 'row', height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 10, shadowColor: MINT_GREEN, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12 },
   folderAddBtnText: { color: '#FFF', fontWeight: '700', fontSize: 16, marginLeft: 8 }
 });

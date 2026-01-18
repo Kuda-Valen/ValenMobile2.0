@@ -12,9 +12,12 @@ import {
   serverTimestamp, updateDoc,
   writeBatch
 } from 'firebase/firestore';
+// Added Storage imports for the Profile Picture fix
+import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { auth, db, VALEN_APP_ID } from '../services/firebase';
+import { NotificationService } from '../services/NotificationService'; // Import added for the live session logic
 
 // Notifications configuration
 Notifications.setNotificationHandler({
@@ -35,10 +38,10 @@ interface TimerState {
   initialDuration: number;
 }
 
-// Success State Interface
+// Success State Interface (Updated to support Level Up and Badges)
 interface SuccessState {
   visible: boolean;
-  type: 'SESSION_COMPLETE' | 'RINGS_CLOSED';
+  type: 'SESSION_COMPLETE' | 'RINGS_CLOSED' | 'LEVEL_UP';
   data?: any;
 }
 
@@ -54,8 +57,8 @@ interface ValenContextType {
   fitnessActivities: any[];
   financialData: { transactions: any[], goals: any[] };
   visions: any[];
-  showSuccess: SuccessState; // New
-  closeSuccessModal: () => void; // New
+  showSuccess: SuccessState;
+  closeSuccessModal: () => void;
   startFocusSession: (moduleId?: string) => void; 
   pauseFocusSession: () => void;
   stopFocusSession: () => void;
@@ -83,6 +86,7 @@ interface ValenContextType {
   toggleFitnessCompletion: (id: string, currentStatus: boolean) => Promise<void>;
   resetModuleDailyStatus: (moduleId: string) => Promise<void>;
   updateModuleSchedule: (moduleId: string, schedule: any) => Promise<void>;
+  updateProfile: (data: any, imageUri?: string) => Promise<void>; // Added to interface
   logout: () => Promise<void>;
 }
 
@@ -114,6 +118,66 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const closeSuccessModal = () => setShowSuccess({ ...showSuccess, visible: false });
+
+  // --- NEW: UPDATE PROFILE FUNCTION ---
+  const updateProfile = async (updateData: any, imageUri?: string) => {
+    if (!user) return;
+    try {
+      let photoURL = profile?.photoURL || '';
+
+      // Handle Image Upload to Firebase Storage
+      if (imageUri) {
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        const storage = getStorage();
+        const storageRef = ref(storage, `users/${user.uid}/profile_pic_${Date.now()}`);
+        await uploadBytes(storageRef, blob);
+        photoURL = await getDownloadURL(storageRef);
+      }
+
+      const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+      await updateDoc(profRef, { 
+        ...updateData, 
+        photoURL,
+        updatedAt: serverTimestamp() 
+      });
+    } catch (e) {
+      console.error("Valen Core Error: Profile update failed: ", e);
+      throw e;
+    }
+  };
+
+  // --- NEW: BADGE CHECKER LOGIC ---
+  const checkAndAwardBadges = async (stats: any, currentBadges: string[] = []) => {
+    const newBadges = [...currentBadges];
+    let earnedNew = false;
+
+    // Deep Diver: Session > 120 mins
+    if (stats.lastSessionMins >= 120 && !newBadges.includes('deep_diver')) {
+      newBadges.push('deep_diver');
+      earnedNew = true;
+    }
+
+    // Monk Mode: Daily Focus > 300 mins
+    if (stats.dailyFocusMins >= 300 && !newBadges.includes('monk_mode')) {
+      newBadges.push('monk_mode');
+      earnedNew = true;
+    }
+
+    // Midnight Scholar: Focus between 12 AM and 4 AM
+    const hour = new Date().getHours();
+    if (hour >= 0 && hour <= 4 && !newBadges.includes('midnight_scholar')) {
+      newBadges.push('midnight_scholar');
+      earnedNew = true;
+    }
+
+    if (earnedNew && user) {
+      const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+      await updateDoc(profRef, { badges: newBadges });
+      return true;
+    }
+    return false;
+  };
 
   // --- MIDNIGHT RESET & NEURAL CONTEXT GENERATOR ---
   const checkDailyReset = async (currentUser: User, currentProfile: any) => {
@@ -202,7 +266,8 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const unsubProfile = onSnapshot(profileDoc, (snap) => {
       if (snap.exists()) {
           const data = snap.data();
-          setProfile(data);
+          // Ensure UID is injected into profile state for the ID Card
+          setProfile({ ...data, uid: user.uid });
           checkDailyReset(user, data); 
       }
       setLoading(false);
@@ -261,7 +326,6 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [user]);
 
-  // --- STANDARD ACTIONS ---
   const addFolder = async (name: string, icon: string) => {
     if (!user) return;
     try { await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'folders'), { name, icon, createdAt: serverTimestamp() }); } catch (e) { console.error(e); }
@@ -360,7 +424,6 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', moduleId), { completedToday: false });
   };
 
-  // --- TIMER LOGIC ---
   const selectModule = (moduleId: string) => {
     if (timerRef.current) clearInterval(timerRef.current);
     setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', activeModuleId: moduleId, timeRemaining: prev.initialDuration }));
@@ -378,7 +441,20 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const startFocusSession = (moduleId?: string) => {
-    setTimerState((prev) => ({ ...prev, isRunning: true, activeModuleId: moduleId || prev.activeModuleId }));
+    setTimerState((prev) => {
+      const isRunning = true;
+      const activeId = moduleId || prev.activeModuleId;
+      
+      // Trigger the notification service
+      const activeMod = modules.find(m => m.id === activeId);
+      NotificationService.startLiveSessionNotification(
+          activeMod?.name || 'Session',
+          Math.floor(prev.timeRemaining / 60),
+          prev.currentPhase === 'Break'
+      );
+
+      return { ...prev, isRunning, activeModuleId: activeId };
+    });
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setTimerState((prev) => {
@@ -408,37 +484,68 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const handleSessionEnd = async (finalState: TimerState, summary?: string) => {
     if (!user || !finalState.activeModuleId || finalState.currentPhase === 'Break') return;
     const secondsSpent = finalState.initialDuration - finalState.timeRemaining;
+    const sessionMins = Math.round(secondsSpent / 60);
     if (secondsSpent < 5) return;
+    
     try {
       const modRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', finalState.activeModuleId);
       const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
       
+      const gainedXP = (sessionMins * 10) + 50;
+      const currentXP = profile?.xp || 0;
+      const currentLevel = profile?.level || 1;
+      const newXP = currentXP + gainedXP;
+      const nextLevelThreshold = currentLevel * 1000;
+      let newLevel = currentLevel;
+      let leveledUp = false;
+
+      if (newXP >= nextLevelThreshold) {
+        newLevel += 1;
+        leveledUp = true;
+      }
+
       await updateDoc(modRef, { hoursDone: increment(secondsSpent / 3600), completedToday: true });
-      await updateDoc(profRef, { dailyFocusMinutes: increment(secondsSpent / 60) });
+      await updateDoc(profRef, { 
+        dailyFocusMinutes: increment(sessionMins),
+        xp: newXP,
+        level: newLevel,
+        totalFocusHours: increment(secondsSpent / 3600)
+      });
       
       await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'focus_history'), { 
         moduleId: finalState.activeModuleId, 
         topic: finalState.topic || 'General Study', 
         summary: summary || '', 
         durationSeconds: secondsSpent, 
+        xpEarned: gainedXP,
         timestamp: serverTimestamp() 
       });
 
+      const earnedBadge = await checkAndAwardBadges(
+        { lastSessionMins: sessionMins, dailyFocusMins: (profile?.dailyFocusMinutes || 0) + sessionMins },
+        profile?.badges || []
+      );
+
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // --- TRIGGER SUCCESS MODAL ---
-      const academicGoal = 240; // Example: 4 hours
-      const updatedFocusMins = (profile?.dailyFocusMinutes || 0) + (secondsSpent / 60);
+      const academicGoal = 240; 
       const totalHabits = religiousActivities.length + fitnessActivities.length;
       const completedHabits = religiousActivities.filter(a => a.completed).length + fitnessActivities.filter(a => a.completed).length;
 
-      if (updatedFocusMins >= academicGoal && completedHabits === totalHabits && totalHabits > 0) {
-        setShowSuccess({ visible: true, type: 'RINGS_CLOSED' });
+      if (leveledUp) {
+        setShowSuccess({ visible: true, type: 'LEVEL_UP', data: { newLevel, xpGained: gainedXP } });
+      } else if ((profile?.dailyFocusMinutes || 0) + sessionMins >= academicGoal && completedHabits === totalHabits && totalHabits > 0) {
+        setShowSuccess({ visible: true, type: 'RINGS_CLOSED', data: { xpGained: gainedXP } });
       } else {
         setShowSuccess({ 
           visible: true, 
           type: 'SESSION_COMPLETE', 
-          data: { minutes: Math.round(secondsSpent / 60), topic: finalState.topic || 'General Study' } 
+          data: { 
+            minutes: sessionMins, 
+            topic: finalState.topic || 'General Study', 
+            xpGained: gainedXP,
+            badgeEarned: earnedBadge 
+          } 
         });
       }
 
@@ -446,7 +553,11 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const pauseFocusSession = () => { if (timerRef.current) clearInterval(timerRef.current); setTimerState(prev => ({ ...prev, isRunning: false })); };
-  const stopFocusSession = () => { if (timerRef.current) clearInterval(timerRef.current); setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', timeRemaining: prev.initialDuration, activeModuleId: undefined })); };
+  const stopFocusSession = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    NotificationService.stopLiveSessionNotification(); // Stop notifications
+    setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', timeRemaining: prev.initialDuration, activeModuleId: undefined }));
+  };
 
   const logout = () => auth.signOut();
 
@@ -458,7 +569,9 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addTask, addFolder, addModule, addReligiousActivity, deleteReligiousActivity, addFitnessActivity, deleteFitnessActivity,
       addTransaction, addFinancialGoal, deleteFinancialItem, updateGoalProgress,
       addVision, deleteVision, updateVisionProgress, toggleTaskCompletion, 
-      toggleFaithCompletion, toggleFitnessCompletion, resetModuleDailyStatus, updateModuleSchedule, logout 
+      toggleFaithCompletion, toggleFitnessCompletion, resetModuleDailyStatus, updateModuleSchedule, 
+      updateProfile, // Exported to provider
+      logout 
     }}>
       {children}
     </ValenContext.Provider>
@@ -470,3 +583,4 @@ export const useValen = () => {
   if (!context) throw new Error("useValen must be used within a provider");
   return context;
 };
+

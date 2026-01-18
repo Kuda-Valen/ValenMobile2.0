@@ -9,10 +9,11 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeInDown,
   useAnimatedProps,
   useSharedValue,
   withTiming
-} from 'react-native-reanimated'; // Added for smooth animations
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { useValen } from '../../src/context/ValenContext';
 
@@ -23,21 +24,54 @@ const MINT_GREEN = '#00BFA5';
 const TEXT_DARK = '#1A1A1A';
 const TEXT_GREY = '#8E8E93';
 
-// Create an Animated version of the SVG Circle
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
 const FADE_BLUE = 'rgba(0, 122, 255, 0.15)';
 const FADE_MINT = 'rgba(0, 191, 165, 0.15)';
+
+// --- PREMIUM NEURAL STATUS HEADER ---
+const NeuralStatusHeader = ({ profile }) => {
+  const level = profile?.level || 1;
+  const xp = profile?.xp || 0;
+  const nextLevelXP = level * 1000;
+  const progress = (xp % 1000) / 1000;
+
+  const getRankName = (lvl: number) => {
+    if (lvl >= 10) return "Global Titan";
+    if (lvl >= 5) return "Executive Strategist";
+    if (lvl >= 2) return "Focus Sentinel";
+    return "Initial Novice";
+  };
+
+  return (
+    <Animated.View entering={FadeInDown.duration(800)} style={styles.statusCard}>
+      <View style={styles.statusTop}>
+        <View>
+          <Text style={styles.rankLabel}>CURRENT RANK</Text>
+          <Text style={styles.rankName}>{getRankName(level)}</Text>
+        </View>
+        <View style={styles.levelBadge}>
+          <Text style={styles.levelText}>LVL {level}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.xpTrackContainer}>
+        <View style={[styles.xpFill, { width: `${progress * 100}%` }]} />
+      </View>
+      
+      <View style={styles.statusFooter}>
+        <Text style={styles.xpDetailText}>{xp} <Text style={{color: TEXT_GREY}}>/ {nextLevelXP} XP</Text></Text>
+        <Text style={styles.nextRankHint}>ASCENDING...</Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 // --- ANIMATED SVG RING COMPONENT ---
 const PremiumRing = ({ progress, size, strokeWidth, activeColor, trackColor }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  
-  // Shared value for the animation
   const animatedProgress = useSharedValue(0);
 
-  // Trigger animation when progress changes
   useEffect(() => {
     animatedProgress.value = withTiming(progress, {
       duration: 1200,
@@ -45,39 +79,20 @@ const PremiumRing = ({ progress, size, strokeWidth, activeColor, trackColor }) =
     });
   }, [progress]);
 
-  // Map the animated progress to SVG props
   const animatedProps = useAnimatedProps(() => {
     const strokeDashoffset = circumference - animatedProgress.value * circumference;
-    return {
-      strokeDashoffset,
-    };
+    return { strokeDashoffset };
   });
 
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
       <Svg width={size} height={size}>
-        {/* Background Track */}
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={trackColor}
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        {/* Active Progress (Animated) */}
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
         <AnimatedCircle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={activeColor}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={circumference}
-          animatedProps={animatedProps}
-          strokeLinecap="round"
-          rotation="-90"
-          origin={`${size / 2}, ${size / 2}`}
+          cx={size / 2} cy={size / 2} r={radius}
+          stroke={activeColor} strokeWidth={strokeWidth} fill="none"
+          strokeDasharray={circumference} animatedProps={animatedProps}
+          strokeLinecap="round" rotation="-90" origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
       <View style={styles.ringCenterSmall}>
@@ -90,8 +105,7 @@ const PremiumRing = ({ progress, size, strokeWidth, activeColor, trackColor }) =
 export default function Dashboard() {
   const router = useRouter();
   const { 
-    profile, timerState, startFocusSession, pauseFocusSession, 
-    tasks, folders, modules, addTask, toggleTaskCompletion,
+    profile, tasks, folders, modules, addTask, toggleTaskCompletion,
     visions, updateVisionProgress,
     religiousActivities, fitnessActivities,
     toggleFaithCompletion, toggleFitnessCompletion
@@ -101,6 +115,14 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(today.getDate());
   const [fullCalendarVisible, setFullCalendarVisible] = useState(false); 
   
+  // --- DYNAMIC GREETING LOGIC ---
+  const greeting = useMemo(() => {
+    const hour = today.getHours();
+    if (hour < 12) return "Good morning,";
+    if (hour < 17) return "Good afternoon,";
+    return "Good evening,";
+  }, [today]);
+
   const currentMonthName = today.toLocaleString('default', { month: 'long' });
   const currentYear = today.getFullYear();
   
@@ -137,6 +159,7 @@ export default function Dashboard() {
     return shortDays[dateObj.getDay()];
   }, [selectedDate, weekDates]);
 
+  // --- RING LOGIC (Automatically resets via Context lastResetDate logic) ---
   const academicProgress = useMemo(() => {
     const focusMinutesClocked = profile?.dailyFocusMinutes || 0;
     const dailyGoalMinutes = (profile?.dailyFocusGoalHours || 3) * 60; 
@@ -144,17 +167,17 @@ export default function Dashboard() {
   }, [profile]);
 
   const disciplineProgress = useMemo(() => {
-    const dailyTasks = tasks.filter(t => t.dueDate === selectedDate);
+    const dTasks = tasks.filter(t => t.dueDate === selectedDate);
     const academicNudges = modules.filter(m => m.dailyNudge === true);
     const dashboardFaith = religiousActivities.filter(a => a.subType === 'reminder' && a.days?.includes(selectedDayName));
     const dashboardFitness = fitnessActivities.filter(a => a.subType === 'reminder' && a.days?.includes(selectedDayName));
     const dailyDisciplines = visions.filter(v => v.type === 'Discipline' && v.reminder === true);
 
-    const totalItems = dailyTasks.length + academicNudges.length + dashboardFaith.length + dashboardFitness.length + dailyDisciplines.length;
+    const totalItems = dTasks.length + academicNudges.length + dashboardFaith.length + dashboardFitness.length + dailyDisciplines.length;
     if (totalItems === 0) return 0;
 
     const completedCount = 
-      dailyTasks.filter(t => t.completed).length +
+      dTasks.filter(t => t.completed).length +
       academicNudges.filter(m => m.completedToday).length +
       dashboardFaith.filter(a => a.completed).length +
       dashboardFitness.filter(a => a.completed).length +
@@ -182,7 +205,24 @@ export default function Dashboard() {
   const dashboardFaith = useMemo(() => religiousActivities.filter(a => a.subType === 'reminder' && a.days?.includes(selectedDayName)), [religiousActivities, selectedDayName]);
   const dashboardFitness = useMemo(() => fitnessActivities.filter(a => a.subType === 'reminder' && a.days?.includes(selectedDayName)), [fitnessActivities, selectedDayName]);
   const dailyDisciplines = useMemo(() => visions.filter(v => v.type === 'Discipline' && v.reminder === true), [visions]);
-  const dailyTasks = tasks.filter(t => t.dueDate === selectedDate);
+  
+  // --- DAILY AGENDA FILTERING WITH OVERDUE LOGIC ---
+  const dailyTasks = useMemo(() => {
+    // Current day tasks
+    const currentTasks = tasks.filter(t => t.dueDate === selectedDate);
+    
+    // Overdue tasks: Not completed AND (Due date is in the past OR (Due date is today but time has passed if applicable))
+    // Note: Since dueDate is stored as a number (Day of month), we compare it to current Day
+    const overdueTasks = tasks.filter(t => 
+      !t.completed && 
+      t.dueDate < today.getDate() && 
+      selectedDate === today.getDate() // Only show overdue tasks when looking at "Today"
+    );
+
+    // Merge them and ensure no duplicates
+    const combined = [...overdueTasks, ...currentTasks];
+    return combined.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+  }, [tasks, selectedDate, today]);
 
   const handleSaveTask = async () => {
     if (!taskTitle) return;
@@ -199,7 +239,7 @@ export default function Dashboard() {
         {/* HEADER */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Good morning,</Text>
+            <Text style={styles.greeting}>{greeting}</Text>
             <Text style={styles.userName}>{profile?.name || 'Valen User'}</Text>
           </View>
           <TouchableOpacity style={styles.avatarPlaceholder} onPress={() => router.push('/profile')}>
@@ -207,7 +247,7 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* CALENDAR BLOCK */}
+        {/* 1. CALENDAR BLOCK */}
         <View style={styles.calendarCard}>
           <View style={styles.calendarHeader}>
             <Text style={styles.monthText}>{currentMonthName} {currentYear}</Text>
@@ -244,32 +284,23 @@ export default function Dashboard() {
           )}
         </View>
 
-        {/* TWO RINGS BLOCK */}
+        {/* 2. TWO RINGS BLOCK */}
         <View style={styles.ringsWrapper}>
           <View style={styles.ringCard}>
-             <PremiumRing 
-                progress={academicProgress} 
-                size={90} 
-                strokeWidth={14} 
-                activeColor="#007AFF" 
-                trackColor={FADE_BLUE} 
-             />
+             <PremiumRing progress={academicProgress} size={90} strokeWidth={14} activeColor="#007AFF" trackColor={FADE_BLUE} />
              <Text style={styles.ringLabel}>Academic</Text>
              <Text style={styles.ringSubLabel}>{Math.round(profile?.dailyFocusMinutes || 0)}m / {(profile?.dailyFocusGoalHours || 3)}h</Text>
           </View>
 
           <View style={styles.ringCard}>
-             <PremiumRing 
-                progress={disciplineProgress} 
-                size={90} 
-                strokeWidth={14} 
-                activeColor={MINT_GREEN} 
-                trackColor={FADE_MINT} 
-             />
+             <PremiumRing progress={disciplineProgress} size={90} strokeWidth={14} activeColor={MINT_GREEN} trackColor={FADE_MINT} />
              <Text style={styles.ringLabel}>Disciplines</Text>
              <Text style={styles.ringSubLabel}>Daily Tasks</Text>
           </View>
         </View>
+
+        {/* 3. NEURAL STATUS BLOCK */}
+        <NeuralStatusHeader profile={profile} />
 
         {/* DAILY DISCIPLINES BLOCK */}
         {(dailyDisciplines.length > 0 || dashboardFaith.length > 0 || dashboardFitness.length > 0 || academicNudges.length > 0) && (
@@ -328,17 +359,25 @@ export default function Dashboard() {
               <Ionicons name="add-circle" size={24} color={MINT_GREEN} />
             </TouchableOpacity>
           </View>
-          {dailyTasks.map((task) => (
-            <View key={task.id} style={styles.taskItem}>
-              <TouchableOpacity style={[styles.checkbox, task.completed && styles.checkboxChecked]} onPress={() => toggleTaskCompletion(task.id, task.completed)}>
-                {task.completed && <Ionicons name="checkmark" size={14} color="#FFF" />}
-              </TouchableOpacity>
-              <Text style={[styles.taskText, task.completed && styles.taskTextDone]}>{task.title}</Text>
-              <View style={[styles.priorityTag, { backgroundColor: task.priority === 'Urgent' ? '#FFE5E5' : '#F5F5F0' }]}>
-                <Text style={[styles.priorityText, { color: task.priority === 'Urgent' ? '#FF4B4B' : TEXT_GREY }]}>{task.priority}</Text>
+          {dailyTasks.map((task) => {
+            const isOverdue = !task.completed && task.dueDate < today.getDate();
+            return (
+              <View key={task.id} style={styles.taskItem}>
+                <TouchableOpacity style={[styles.checkbox, task.completed && styles.checkboxChecked]} onPress={() => toggleTaskCompletion(task.id, task.completed)}>
+                  {task.completed && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.taskText, task.completed && styles.taskTextDone]}>{task.title}</Text>
+                  {isOverdue && <Text style={{ fontSize: 10, color: '#FF4B4B', fontWeight: '800' }}>OVERDUE</Text>}
+                </View>
+                <View style={[styles.priorityTag, { backgroundColor: isOverdue ? '#FFE5E5' : (task.priority === 'Urgent' ? '#FFE5E5' : '#F5F5F0') }]}>
+                  <Text style={[styles.priorityText, { color: isOverdue || task.priority === 'Urgent' ? '#FF4B4B' : TEXT_GREY }]}>
+                    {isOverdue ? 'CRITICAL' : task.priority}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
           {dailyTasks.length === 0 && <Text style={styles.emptyAgenda}>No tasks. Add one to close your ring!</Text>}
         </View>
 
@@ -390,7 +429,20 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 13, color: TEXT_GREY, fontWeight: '500' },
   userName: { fontSize: 24, fontWeight: '800', color: TEXT_DARK },
   avatarPlaceholder: { width: 42, height: 42, borderRadius: 21, backgroundColor: CARD_WHITE, justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  calendarCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 15 },
+  
+  statusCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  statusTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  rankLabel: { color: TEXT_GREY, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  rankName: { color: TEXT_DARK, fontSize: 18, fontWeight: '900' },
+  levelBadge: { backgroundColor: MINT_GREEN, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  levelText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
+  xpTrackContainer: { height: 5, backgroundColor: '#F5F5F0', borderRadius: 2.5, overflow: 'hidden' },
+  xpFill: { height: '100%', backgroundColor: MINT_GREEN, borderRadius: 2.5 },
+  statusFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+  xpDetailText: { color: TEXT_DARK, fontSize: 11, fontWeight: '700' },
+  nextRankHint: { color: MINT_GREEN, fontSize: 10, fontWeight: '800' },
+
+  calendarCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   monthText: { fontSize: 16, fontWeight: '700', color: TEXT_DARK },
   fullCalendarBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F0FAF9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
@@ -401,21 +453,13 @@ const styles = StyleSheet.create({
   todayHighlight: { borderWidth: 1, borderColor: MINT_GREEN },
   dayLetter: { fontSize: 11, color: TEXT_GREY, fontWeight: '600', marginBottom: 4 },
   dayDate: { fontSize: 15, fontWeight: '700', color: TEXT_DARK },
-
-  // UPDATED RINGS UX
   ringsWrapper: { flexDirection: 'row', gap: 15, marginBottom: 15 },
-  ringCard: { flex: 1, backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, alignItems: 'center', justifyContent: 'center' },
-  ringContainerSmall: { width: 90, height: 90, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  ringCenterSmall: { 
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  ringCard: { flex: 1, backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, alignItems: 'center', justifyContent: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  ringCenterSmall: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   ringPercentTextSmall: { fontSize: 16, fontWeight: '900', color: TEXT_DARK },
   ringLabel: { fontSize: 14, fontWeight: '800', color: TEXT_DARK },
   ringSubLabel: { fontSize: 10, color: TEXT_GREY, fontWeight: '600', marginTop: 2 },
-
-  agendaCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 15 },
+  agendaCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   agendaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   agendaTitle: { fontSize: 18, fontWeight: '800', color: TEXT_DARK },
   taskItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F0' },
@@ -426,7 +470,7 @@ const styles = StyleSheet.create({
   priorityTag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   priorityText: { fontSize: 10, fontWeight: '700' },
   emptyAgenda: { textAlign: 'center', color: TEXT_GREY, paddingVertical: 20 },
-  analyticsSummaryCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 30 },
+  analyticsSummaryCard: { backgroundColor: CARD_WHITE, borderRadius: 24, padding: 20, marginBottom: 30, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   pillarContainer: { marginTop: 5 },
   pillarRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   pillarLabel: { width: 65, fontSize: 11, fontWeight: '700', color: TEXT_DARK },

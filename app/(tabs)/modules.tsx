@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AppState, // Added for background notification logic
+  AppStateStatus,
   Dimensions,
   FlatList,
   Modal,
@@ -24,6 +26,7 @@ import Animated, {
   ZoomIn
 } from 'react-native-reanimated';
 import { useValen } from '../../src/context/ValenContext';
+import { NotificationService } from '../../src/services/NotificationService'; // Added import
 
 const { width } = Dimensions.get('window');
 
@@ -32,7 +35,7 @@ const MINT_GREEN = '#00BFA5';
 const CARD_WHITE = '#FFFFFF';
 const TEXT_DARK = '#1A1A1A';
 const TEXT_GREY = '#8E8E93';
-const BREAK_BG = '#E0F2F1'; // Softer teal for break phase
+const BREAK_BG = '#E0F2F1'; 
 
 const PREMIUM_ICONS = [
   'book', 'calculator', 'flask', 'language', 'code-working', 
@@ -46,6 +49,7 @@ const ITEM_HEIGHT = 50;
 export default function ModulesScreen() {
   const { 
     modules, 
+    profile, 
     addModule, 
     startFocusSession, 
     pauseFocusSession, 
@@ -55,7 +59,7 @@ export default function ModulesScreen() {
     setTimerConfig,
     setSessionTopic,
     selectModule,
-    stopFocusSession // Added to allow clean exit from breaks
+    stopFocusSession 
   } = useValen();
   
   const [modalVisible, setModalVisible] = useState(false);
@@ -71,9 +75,39 @@ export default function ModulesScreen() {
   });
 
   const pulseValue = useSharedValue(0);
-
-  // Determine Phase
   const isBreak = timerState.currentPhase === 'Break';
+
+  // --- NEW: BACKGROUND NOTIFICATION LOGIC ---
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        if (timerState.isRunning && timerState.activeModuleId) {
+          const activeMod = modules.find(m => m.id === timerState.activeModuleId);
+          NotificationService.startLiveSessionNotification(
+            activeMod?.name || 'Session',
+            Math.floor(timerState.timeRemaining / 60),
+            timerState.currentPhase === 'Break'
+          );
+        }
+      } else if (nextAppState === 'active') {
+        // Optional: you could cancel the completion alert if they return to app
+        // but it's better to keep it in case they leave again immediately.
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [timerState.isRunning, timerState.timeRemaining, timerState.activeModuleId, timerState.currentPhase]);
+
+  const totalHoursClocked = useMemo(() => {
+    return modules.reduce((acc, m) => acc + (m.hoursDone || 0), 0);
+  }, [modules]);
+
+  const dailyAcademicProgress = useMemo(() => {
+    const focusMinutes = profile?.dailyFocusMinutes || 0;
+    const goalMinutes = (profile?.dailyFocusGoalHours || 4) * 60;
+    return Math.min(focusMinutes / goalMinutes, 1);
+  }, [profile]);
 
   useEffect(() => {
     if (timerState.isRunning) {
@@ -96,7 +130,6 @@ export default function ModulesScreen() {
     }
   }, [timerState.activeModuleId]);
 
-  // Handle natural session completion (Natural end of study timer)
   useEffect(() => {
     if (timerState.timeRemaining === 0 && !isBreak && timerState.activeModuleId && !timerState.isRunning) {
         setCelebrationVisible(true);
@@ -112,7 +145,6 @@ export default function ModulesScreen() {
   };
 
   const handleFinishCelebration = async () => {
-    // We pass the summary to the context function
     await stopAndSaveSession(sessionSummary);
     setCelebrationVisible(false);
     setSessionSummary('');
@@ -148,16 +180,24 @@ export default function ModulesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
         <View style={styles.summaryCard}>
-          <View>
-            <Text style={styles.summaryLabel}>Total Study Time</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.summaryLabel}>Total Academic Volume</Text>
             <Text style={styles.summaryValue}>
-              {modules.reduce((acc, m) => acc + (m.hoursDone || 0), 0).toFixed(1)} 
+              {totalHoursClocked.toFixed(1)} 
               <Text style={{ fontSize: 18, color: TEXT_GREY }}> hrs</Text>
+            </Text>
+            
+            <View style={styles.dailyGoalTrack}>
+                <View style={[styles.dailyGoalFill, { width: `${dailyAcademicProgress * 100}%` }]} />
+            </View>
+            <Text style={styles.dailyGoalText}>
+                Today: {Math.round(profile?.dailyFocusMinutes || 0)}m / {profile?.dailyFocusGoalHours || 4}h
             </Text>
           </View>
           <View style={styles.summaryCircle}>
-            <Ionicons name="stats-chart" size={24} color={MINT_GREEN} />
+            <Ionicons name="medal" size={24} color={MINT_GREEN} />
           </View>
         </View>
 
@@ -273,7 +313,7 @@ export default function ModulesScreen() {
                     <Text style={styles.breakText}>Your study session has been logged. Stand up, stretch, and take a deep breath.</Text>
                     <TouchableOpacity 
                         style={styles.skipBreakBtn} 
-                        onPress={() => resetTimer()} // Custom logic in Context can reset to study
+                        onPress={() => resetTimer()} 
                     >
                         <Text style={styles.skipBreakText}>Skip Break</Text>
                         <Ionicons name="play-skip-forward" size={16} color={MINT_GREEN} />
@@ -338,7 +378,7 @@ export default function ModulesScreen() {
                 placeholder="Brief summary of your study session..." 
                 multiline
                 value={sessionSummary}
-                onChangeText={setSessionSummary}
+                onChangeText={setSessionTopic}
                 placeholderTextColor={TEXT_GREY}
             />
 
@@ -354,18 +394,25 @@ export default function ModulesScreen() {
         </View>
       </Modal>
 
-      {/* --- ADD MODULE MODAL --- */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      {/* --- ADD MODULE MODAL (CENTERED) --- */}
+      <Modal visible={modalVisible} animationType="fade" transparent>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
-            <View style={styles.sheetIndicator} />
-            <Text style={styles.modalTitle}>New Module</Text>
+            <View style={styles.sheetHeader}>
+               <Text style={styles.modalTitle}>New Module</Text>
+               <TouchableOpacity onPress={() => setModalVisible(false)}>
+                  <Ionicons name="close" size={24} color={TEXT_GREY} />
+               </TouchableOpacity>
+            </View>
+            
             <TextInput 
                 style={styles.input} 
                 placeholder="Module Name" 
                 value={newModule.name} 
                 onChangeText={(t) => setNewModule({...newModule, name: t})} 
             />
+            
+            <Text style={[styles.label, { marginBottom: 12 }]}>Select Icon</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.iconList}>
               {PREMIUM_ICONS.map(icon => (
                 <TouchableOpacity 
@@ -377,6 +424,7 @@ export default function ModulesScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            
             <TouchableOpacity style={styles.saveBtn} onPress={handleCreateModule}>
                 <Text style={styles.saveBtnText}>Activate Module</Text>
             </TouchableOpacity>
@@ -407,8 +455,6 @@ const styles = StyleSheet.create({
   progressMiniFill: { height: '100%', backgroundColor: MINT_GREEN },
   progressText: { fontSize: 10, fontWeight: '700', color: TEXT_GREY },
   dashed: { borderWidth: 2, borderColor: '#EEE', borderStyle: 'dashed', backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
-  
-  // Live Focus Card
   liveFocusCard: { backgroundColor: TEXT_DARK, borderRadius: 24, padding: 18, marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
   liveFocusInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   liveIconBg: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(0, 191, 165, 0.2)', justifyContent: 'center', alignItems: 'center' },
@@ -416,8 +462,6 @@ const styles = StyleSheet.create({
   liveStatus: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '500', marginTop: 2 },
   liveTimerBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   liveTimerText: { color: MINT_GREEN, fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
-
-  // Focus Mode Modal
   focusContainer: { flex: 1, backgroundColor: CREAM_BG },
   focusHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, alignItems: 'center' },
   focusTitle: { fontSize: 12, fontWeight: '800', color: TEXT_GREY, letterSpacing: 2 },
@@ -432,14 +476,12 @@ const styles = StyleSheet.create({
   wheelItem: { height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' },
   wheelText: { fontSize: 28, fontWeight: '800', color: TEXT_DARK },
   topicCard: { backgroundColor: CARD_WHITE, width: '100%', padding: 20, borderRadius: 24, marginBottom: 20 },
+  label: { fontSize: 12, fontWeight: '800', color: TEXT_GREY, textTransform: 'uppercase' },
   topicInput: { fontSize: 18, fontWeight: '600', color: TEXT_DARK, marginTop: 10 },
-  
-  // Break Phase UI
   breakCard: { backgroundColor: CARD_WHITE, width: '100%', padding: 25, borderRadius: 24, marginBottom: 25, alignItems: 'center' },
   breakText: { fontSize: 14, color: TEXT_DARK, textAlign: 'center', fontWeight: '500', lineHeight: 22, marginBottom: 15 },
   skipBreakBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#F0FAF9' },
   skipBreakText: { fontSize: 14, fontWeight: '700', color: MINT_GREEN },
-
   modeToggleRow: { flexDirection: 'row', backgroundColor: '#EBEBE6', borderRadius: 16, padding: 4, marginBottom: 25 },
   modeBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12 },
   activeModeBtn: { backgroundColor: CARD_WHITE, elevation: 2 },
@@ -450,19 +492,36 @@ const styles = StyleSheet.create({
   secBtn: { width: 54, height: 54, borderRadius: 27, backgroundColor: CARD_WHITE, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
   shieldNotice: { flexDirection: 'row', alignItems: 'center', marginTop: 30, gap: 6 },
   shieldText: { fontSize: 11, fontWeight: '700', color: TEXT_GREY, textTransform: 'uppercase', letterSpacing: 1 },
-
-  // Modals
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFF', padding: 25, borderTopLeftRadius: 35, borderTopRightRadius: 35 },
-  sheetIndicator: { width: 40, height: 5, backgroundColor: '#EEE', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 20, fontWeight: '900', color: TEXT_DARK, marginBottom: 20 },
+  overlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  sheet: { 
+    backgroundColor: '#FFF', 
+    padding: 25, 
+    borderRadius: 32, 
+    width: width * 0.85, 
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20
+  },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: TEXT_DARK },
   input: { backgroundColor: '#F5F5F0', padding: 20, borderRadius: 18, width: '100%', marginBottom: 20, fontSize: 16, fontWeight: '600' },
   iconList: { marginBottom: 30 },
   iconChoice: { width: 55, height: 55, borderRadius: 15, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   activeIcon: { backgroundColor: MINT_GREEN },
   saveBtn: { backgroundColor: MINT_GREEN, height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', width: '100%' },
   saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 18 },
-
   celebrationOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   celebrationCard: { backgroundColor: CARD_WHITE, borderRadius: 32, padding: 30, alignItems: 'center', width: '100%' },
   confettiIcon: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F0FAF9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
@@ -473,4 +532,22 @@ const styles = StyleSheet.create({
   motivationText: { fontSize: 13, color: MINT_GREEN, fontWeight: '600', marginLeft: 10, flex: 1, fontStyle: 'italic' },
   celebrationBtn: { backgroundColor: MINT_GREEN, height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', width: '100%' },
   celebrationBtnText: { color: '#FFF', fontWeight: '800', fontSize: 18 },
+  dailyGoalTrack: {
+    height: 4,
+    backgroundColor: '#F5F5F0',
+    borderRadius: 2,
+    marginTop: 12,
+    width: '80%',
+    overflow: 'hidden'
+  },
+  dailyGoalFill: {
+    height: '100%',
+    backgroundColor: MINT_GREEN,
+  },
+  dailyGoalText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: TEXT_GREY,
+    marginTop: 6
+  }
 });
