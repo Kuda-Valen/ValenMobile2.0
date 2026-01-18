@@ -2,16 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useValen } from '../src/context/ValenContext';
 
@@ -24,14 +24,16 @@ const TEXT_GREY = '#8E8E93';
 
 export default function FaithScreen() {
   const router = useRouter();
-  const { religiousActivities, addReligiousActivity, deleteReligiousActivity } = useValen();
+  const { religiousActivities, addReligiousActivity, deleteReligiousActivity, toggleFaithCompletion } = useValen();
 
   // MODAL & REMINDER FORM STATE
   const [modalVisible, setModalVisible] = useState(false);
   const [reminderType, setReminderType] = useState('Pray');
   const [specificName, setSpecificName] = useState('');
   const [reminderTime, setReminderTime] = useState('08:00');
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  
+  // Logic: Store indices instead of strings to avoid 'T' and 'S' duplicates overlapping
+  const [selectedDayIndices, setSelectedDayIndices] = useState<number[]>([]);
 
   // BIBLE STUDY FORM STATE
   const [studyChapters, setStudyChapters] = useState('');
@@ -43,22 +45,24 @@ export default function FaithScreen() {
   const reminders = religiousActivities.filter(a => a.subType === 'reminder');
   const studies = religiousActivities.filter(a => a.subType === 'bible-study');
 
-  const handleToggleDay = (day: string) => {
-    setSelectedDays(prev =>
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+  const handleToggleDay = (index: number) => {
+    setSelectedDayIndices(prev =>
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
     );
   };
 
   const saveReminder = async () => {
-    // Logic: Combine Category + Specific Name
     const finalTitle = reminderType === 'Other' 
       ? specificName 
       : `${reminderType}${specificName ? ': ' + specificName : ''}`;
 
+    // Convert indices back to strings for storage
+    const daysToSave = selectedDayIndices.map(i => daysList[i]);
+
     await addReligiousActivity({
       subType: 'reminder',
       text: finalTitle,
-      days: selectedDays,
+      days: daysToSave,
       time: reminderTime,
       completed: false
     });
@@ -66,7 +70,7 @@ export default function FaithScreen() {
     setModalVisible(false);
     setSpecificName('');
     setReminderTime('08:00');
-    setSelectedDays([]);
+    setSelectedDayIndices([]);
   };
 
   return (
@@ -94,7 +98,10 @@ export default function FaithScreen() {
         <View style={styles.remindersList}>
           {reminders.length > 0 ? reminders.map((item) => (
             <View key={item.id} style={styles.reminderCard}>
-              <TouchableOpacity style={styles.checkmark}>
+              <TouchableOpacity 
+                style={styles.checkmark}
+                onPress={() => toggleFaithCompletion(item.id, item.completed)}
+              >
                 <Ionicons 
                   name={item.completed ? "checkmark-circle" : "ellipse-outline"} 
                   size={26} 
@@ -162,7 +169,7 @@ export default function FaithScreen() {
         ))}
       </ScrollView>
 
-      {/* CENTERED BLUR MODAL */}
+      {/* CENTERED MODAL */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView 
@@ -203,6 +210,7 @@ export default function FaithScreen() {
                     value={reminderTime}
                     onChangeText={setReminderTime}
                     placeholder="08:00"
+                    keyboardType="numbers-and-punctuation"
                   />
                 </View>
               </View>
@@ -213,10 +221,10 @@ export default function FaithScreen() {
                   {daysList.map((d, i) => (
                     <TouchableOpacity 
                       key={i} 
-                      onPress={() => handleToggleDay(d)}
-                      style={[styles.dayCircle, selectedDays.includes(d) && styles.activeDayCircle]}
+                      onPress={() => handleToggleDay(i)}
+                      style={[styles.dayCircle, selectedDayIndices.includes(i) && styles.activeDayCircle]}
                     >
-                      <Text style={[styles.dayText, selectedDays.includes(d) && styles.activeDayText]}>{d}</Text>
+                      <Text style={[styles.dayText, selectedDayIndices.includes(i) && styles.activeDayText]}>{d}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -270,31 +278,30 @@ const styles = StyleSheet.create({
   historyRef: { color: '#444', lineHeight: 22, fontSize: 14, marginBottom: 12 },
   historyDate: { fontSize: 11, color: TEXT_GREY, fontWeight: '700', textTransform: 'uppercase' },
 
-  // Centered Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   centerCard: { backgroundColor: CARD_WHITE, width: '100%', borderRadius: 35, padding: 25, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, elevation: 10 },
-  modalHeading: { fontSize: 22, fontWeight: '900', color: TEXT_DARK, textAlign: 'center', marginBottom: 25 },
-  label: { fontSize: 11, fontWeight: '800', color: TEXT_GREY, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 },
-  presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
-  presetTile: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F5F5F0' },
+  modalHeading: { fontSize: 22, fontWeight: '900', color: TEXT_DARK, textAlign: 'center', marginBottom: 20 },
+  label: { fontSize: 11, fontWeight: '800', color: TEXT_GREY, textTransform: 'uppercase', marginBottom: 10, letterSpacing: 1 },
+  presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15 },
+  presetTile: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F5F5F0' },
   activePreset: { backgroundColor: MINT_GREEN },
-  presetText: { fontWeight: '700', color: TEXT_GREY, fontSize: 13 },
+  presetText: { fontWeight: '700', color: TEXT_GREY, fontSize: 12 },
   activePresetText: { color: '#FFF' },
-  customInput: { backgroundColor: '#F5F5F0', padding: 16, borderRadius: 15, fontSize: 16, marginBottom: 20, fontWeight: '600', color: TEXT_DARK },
+  customInput: { backgroundColor: '#F5F5F0', padding: 14, borderRadius: 15, fontSize: 15, marginBottom: 15, fontWeight: '600', color: TEXT_DARK },
   
-  row: { flexDirection: 'row', gap: 15, marginBottom: 30 },
-  timeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F0', padding: 14, borderRadius: 15, gap: 8 },
+  row: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  timeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F0', padding: 12, borderRadius: 15, gap: 8 },
   timeInput: { fontSize: 15, fontWeight: '700', color: TEXT_DARK, width: '100%' },
   
-  daysRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  dayCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center' },
+  daysRow: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'nowrap' },
+  dayCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center' },
   activeDayCircle: { backgroundColor: TEXT_DARK },
-  dayText: { fontWeight: '700', color: TEXT_GREY, fontSize: 11 },
+  dayText: { fontWeight: '700', color: TEXT_GREY, fontSize: 10 },
   activeDayText: { color: '#FFF' },
   
-  modalActions: { flexDirection: 'row', gap: 10 },
-  btnSecondary: { flex: 1, padding: 18, alignItems: 'center' },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  btnSecondary: { flex: 1, padding: 15, alignItems: 'center' },
   btnSecondaryText: { fontWeight: '700', color: TEXT_GREY },
-  btnPrimary: { flex: 2, backgroundColor: MINT_GREEN, padding: 18, borderRadius: 20, alignItems: 'center', elevation: 4, shadowColor: MINT_GREEN, shadowOpacity: 0.3, shadowRadius: 10 },
-  btnPrimaryText: { color: '#FFF', fontWeight: '800', fontSize: 16 }
+  btnPrimary: { flex: 2, backgroundColor: MINT_GREEN, padding: 15, borderRadius: 18, alignItems: 'center', elevation: 4, shadowColor: MINT_GREEN, shadowOpacity: 0.3, shadowRadius: 10 },
+  btnPrimaryText: { color: '#FFF', fontWeight: '800', fontSize: 15 }
 });

@@ -1,15 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useValen } from '../src/context/ValenContext';
 
@@ -20,19 +22,28 @@ const TEXT_GREY = '#8E8E93';
 const CARD_WHITE = '#FFFFFF';
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { profile, updateProfile, logout } = useValen();
   
-  // Local states for functional settings
   const [shieldActive, setShieldActive] = useState(true);
   const [aiStrictTone, setAiStrictTone] = useState(profile?.neuralContext?.strictTone || false);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [soundscapes, setSoundscapes] = useState(true);
+  
+  // Modal State for Theme
+  const [themeModalVisible, setThemeModalVisible] = useState(false);
 
   const handleToggleStrict = async (value: boolean) => {
     setAiStrictTone(value);
     await updateProfile({ 
       neuralContext: { ...profile?.neuralContext, strictTone: value } 
     });
+  };
+
+  const handleThemeChange = async (themeName: 'light' | 'dark') => {
+    await updateProfile({ theme: themeName });
+    setThemeModalVisible(false);
+    Alert.alert("Interface Updated", `System rebooted in Valen ${themeName === 'dark' ? 'Onyx' : 'Light'} mode.`);
   };
 
   const handleClearData = () => {
@@ -75,13 +86,20 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <View style={styles.headerTopRow}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                <Ionicons name="chevron-back" size={24} color={TEXT_DARK} />
+            </TouchableOpacity>
+            <View style={styles.versionBadge}>
+                <Text style={styles.versionText}>v1.0.4</Text>
+            </View>
+        </View>
         <Text style={styles.title}>Command Center</Text>
-        <Text style={styles.subtitle}>System Version 1.0.4 • Optimized</Text>
+        <Text style={styles.subtitle}>System Preferences • Optimized</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         
-        {/* GROUP 1: NEURAL ADAPTATION */}
         <Text style={styles.groupLabel}>Neural Intelligence</Text>
         <View style={styles.card}>
           <SettingRow 
@@ -100,7 +118,6 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* GROUP 2: FOCUS ENGINE */}
         <Text style={styles.groupLabel}>Focus Parameters</Text>
         <View style={styles.card}>
           <SettingRow 
@@ -127,27 +144,6 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* GROUP 3: DATA INTEGRITY */}
-        <Text style={styles.groupLabel}>Data & Privacy</Text>
-        <View style={styles.card}>
-          <SettingRow 
-            icon="cloud-download-outline" 
-            label="Export Neural Data" 
-            subtext="Download performance report (PDF)"
-            type="link"
-            onPress={() => Alert.alert("Data Export", "Compiling archive...")}
-          />
-          <View style={styles.divider} />
-          <SettingRow 
-            icon="trash-outline" 
-            label="Clear Local Cache" 
-            subtext="Purge temporary analytics data"
-            type="link"
-            onPress={handleClearData}
-          />
-        </View>
-
-        {/* GROUP 4: SYSTEM PREFERENCES */}
         <Text style={styles.groupLabel}>Preferences</Text>
         <View style={styles.card}>
           <SettingRow 
@@ -161,85 +157,90 @@ export default function SettingsScreen() {
           <SettingRow 
             icon="color-palette-outline" 
             label="Visual Interface" 
-            subtext="Valen Default (Cream/Mint)"
+            subtext={profile?.theme === 'dark' ? "Valen Onyx (Dark)" : "Valen Light (Cream)"}
             type="link"
+            onPress={() => setThemeModalVisible(true)}
           />
         </View>
 
-        {/* DANGER ZONE */}
         <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
           <Ionicons name="log-out-outline" size={20} color="#FF4B4B" />
           <Text style={styles.logoutText}>Terminate Secure Session</Text>
         </TouchableOpacity>
-
-        <Text style={styles.footerText}>
-          Valen Intelligence © 2026. Data encrypted in transit.
-        </Text>
       </ScrollView>
+
+      {/* --- THEME SELECTION MODAL --- */}
+      <Modal visible={themeModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.themeSheet}>
+            <Text style={styles.modalTitle}>Neural Interface</Text>
+            <Text style={styles.modalSub}>Select your preferred visual environment</Text>
+
+            <TouchableOpacity 
+              style={[styles.themeOption, profile?.theme !== 'dark' && styles.activeTheme]} 
+              onPress={() => handleThemeChange('light')}
+            >
+              <View style={[styles.themePreview, { backgroundColor: CREAM_BG }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.themeName}>Valen Light</Text>
+                <Text style={styles.themeDesc}>Classic cream & mint for day focus</Text>
+              </View>
+              {profile?.theme !== 'dark' && <Ionicons name="checkmark-circle" size={24} color={MINT_GREEN} />}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.themeOption, profile?.theme === 'dark' && styles.activeTheme]} 
+              onPress={() => handleThemeChange('dark')}
+            >
+              <View style={[styles.themePreview, { backgroundColor: '#121212' }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.themeName}>Valen Onyx</Text>
+                <Text style={styles.themeDesc}>Deep blacks for low-light deep work</Text>
+              </View>
+              {profile?.theme === 'dark' && <Ionicons name="checkmark-circle" size={24} color={MINT_GREEN} />}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setThemeModalVisible(false)} style={styles.closeModalBtn}>
+              <Text style={styles.closeModalText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: CREAM_BG },
-  header: { padding: 25, paddingTop: 20 },
+  header: { padding: 25, paddingTop: 10 },
+  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  backBtn: { width: 45, height: 45, borderRadius: 15, backgroundColor: CARD_WHITE, justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  versionBadge: { backgroundColor: '#E0F2F1', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  versionText: { fontSize: 10, fontWeight: '800', color: MINT_GREEN },
   title: { fontSize: 28, fontWeight: '900', color: TEXT_DARK },
-  subtitle: { fontSize: 12, color: MINT_GREEN, fontWeight: '700', letterSpacing: 1, marginTop: 4 },
-  
+  subtitle: { fontSize: 12, color: TEXT_GREY, fontWeight: '700', letterSpacing: 1, marginTop: 4 },
   scroll: { paddingHorizontal: 20, paddingBottom: 50 },
-  groupLabel: { 
-    fontSize: 11, 
-    fontWeight: '800', 
-    color: TEXT_GREY, 
-    textTransform: 'uppercase', 
-    letterSpacing: 1.5,
-    marginBottom: 10,
-    marginTop: 25,
-    marginLeft: 10
-  },
-  card: { 
-    backgroundColor: CARD_WHITE, 
-    borderRadius: 24, 
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 }
-  },
-  row: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 18,
-    backgroundColor: CARD_WHITE
-  },
-  iconContainer: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 12, 
-    backgroundColor: '#F0FAF9', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
+  groupLabel: { fontSize: 11, fontWeight: '800', color: TEXT_GREY, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 10, marginTop: 25, marginLeft: 10 },
+  card: { backgroundColor: CARD_WHITE, borderRadius: 24, overflow: 'hidden', elevation: 2 },
+  row: { flexDirection: 'row', alignItems: 'center', padding: 18, backgroundColor: CARD_WHITE },
+  iconContainer: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F0FAF9', justifyContent: 'center', alignItems: 'center' },
   textContainer: { flex: 1, marginLeft: 15 },
   rowLabel: { fontSize: 15, fontWeight: '700', color: TEXT_DARK },
   rowSubtext: { fontSize: 11, color: TEXT_GREY, marginTop: 2, fontWeight: '500' },
   divider: { height: 1, backgroundColor: '#F5F5F0', marginHorizontal: 15 },
-
-  logoutBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginTop: 40, 
-    gap: 10,
-    padding: 15
-  },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 40, gap: 10, padding: 15 },
   logoutText: { color: '#FF4B4B', fontWeight: '800', fontSize: 15 },
-  footerText: { 
-    textAlign: 'center', 
-    fontSize: 10, 
-    color: TEXT_GREY, 
-    marginTop: 30, 
-    fontWeight: '600' 
-  }
+  
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  themeSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 30, paddingBottom: 50 },
+  modalTitle: { fontSize: 22, fontWeight: '900', color: TEXT_DARK },
+  modalSub: { fontSize: 13, color: TEXT_GREY, marginBottom: 25, marginTop: 4 },
+  themeOption: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 20, marginBottom: 15, borderWidth: 2, borderColor: 'transparent', backgroundColor: '#F9F9F7' },
+  activeTheme: { borderColor: MINT_GREEN, backgroundColor: '#F0FAF9' },
+  themePreview: { width: 50, height: 50, borderRadius: 12, marginRight: 15, borderWidth: 1, borderColor: '#EEE' },
+  themeName: { fontSize: 16, fontWeight: '800', color: TEXT_DARK },
+  themeDesc: { fontSize: 12, color: TEXT_GREY, marginTop: 2 },
+  closeModalBtn: { alignSelf: 'center', marginTop: 10, padding: 15 },
+  closeModalText: { color: TEXT_GREY, fontWeight: '700' }
 });

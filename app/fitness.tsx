@@ -3,10 +3,10 @@ import { useRouter } from 'expo-router';
 import { Pedometer } from 'expo-sensors';
 import React, { useEffect, useState } from 'react';
 import {
-    KeyboardAvoidingView, Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
+  KeyboardAvoidingView, Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
 import { useValen } from '../src/context/ValenContext';
 
@@ -29,7 +29,9 @@ export default function FitnessScreen() {
   const [category, setCategory] = useState('Gym');
   const [activityName, setActivityName] = useState('');
   const [time, setTime] = useState('06:00');
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  
+  // FIXED: Logic stores indices [0, 1, 2...] instead of strings ['M', 'T'...] to handle duplicates
+  const [selectedDayIndices, setSelectedDayIndices] = useState<number[]>([]);
 
   const presets = ['Gym', 'Run', 'Walk', 'Yoga', 'Swim', 'Other'];
   const daysList = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -51,13 +53,22 @@ export default function FitnessScreen() {
     return () => subscription && subscription.remove();
   }, []);
 
+  const handleToggleDay = (index: number) => {
+    setSelectedDayIndices(prev =>
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
+  };
+
   const saveRoutine = async () => {
+    // Convert indices back to day strings for database storage
+    const daysToSave = selectedDayIndices.map(i => daysList[i]);
+
     await addFitnessActivity({
       subType: 'reminder',
       category,
       title: activityName || category,
       time,
-      days: selectedDays,
+      days: daysToSave,
       completed: false,
     });
     setModalVisible(false);
@@ -66,8 +77,9 @@ export default function FitnessScreen() {
 
   const resetForm = () => {
     setActivityName('');
-    setSelectedDays([]);
+    setSelectedDayIndices([]);
     setCategory('Gym');
+    setTime('06:00');
   };
 
   const caloriesBurned = Math.round(stepCount * 0.04);
@@ -174,10 +186,10 @@ export default function FitnessScreen() {
                         {daysList.map((d, i) => (
                             <TouchableOpacity 
                                 key={i} 
-                                style={[styles.dayCircle, selectedDays.includes(d) && styles.activeDayCircle]}
-                                onPress={() => setSelectedDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])}
+                                style={[styles.dayCircle, selectedDayIndices.includes(i) && styles.activeDayCircle]}
+                                onPress={() => handleToggleDay(i)}
                             >
-                                <Text style={[styles.dayText, selectedDays.includes(d) && styles.activeDayText]}>{d}</Text>
+                                <Text style={[styles.dayText, selectedDayIndices.includes(i) && styles.activeDayText]}>{d}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -237,7 +249,7 @@ const styles = StyleSheet.create({
   activePreset: { backgroundColor: MINT_GREEN },
   presetText: { fontWeight: '700', color: TEXT_GREY },
   activePresetText: { color: '#FFF' },
-  input: { backgroundColor: '#F5F5F0', padding: 15, borderRadius: 15, fontSize: 16, marginBottom: 15, fontWeight: '600' },
+  input: { backgroundColor: '#F5F5F0', padding: 15, borderRadius: 15, fontSize: 16, marginBottom: 15, fontWeight: '600', color: TEXT_DARK },
   row: { flexDirection: 'row', gap: 15, marginBottom: 20 },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between' },
   dayCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center' },
@@ -245,7 +257,6 @@ const styles = StyleSheet.create({
   dayText: { fontSize: 10, fontWeight: '700', color: TEXT_GREY },
   activeDayText: { color: '#FFF' },
   
-  // MODAL ACTIONS REFINED
   modalActions: { 
     flexDirection: 'row', 
     gap: 12, 

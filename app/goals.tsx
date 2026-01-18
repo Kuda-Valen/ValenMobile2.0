@@ -2,13 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Modal,
-    SafeAreaView, ScrollView, StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity, View
+  KeyboardAvoidingView,
+  Modal,
+  SafeAreaView, ScrollView, StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity, View
 } from 'react-native';
 import { useValen } from '../src/context/ValenContext';
 
@@ -30,19 +30,23 @@ export default function GoalsScreen() {
   const [title, setTitle] = useState('');
   const [isReminderEnabled, setIsReminderEnabled] = useState(true);
 
+  // Expanded and converted to a grid-friendly list
   const presets = [
     { title: 'Read 10 Pages', icon: 'book-outline' },
     { title: 'Plan Tomorrow', icon: 'calendar-outline' },
     { title: 'Deep Work', icon: 'bulb-outline' },
     { title: 'Skin Care', icon: 'water-outline' },
-    { title: 'Meditation', icon: 'leaf-outline' }
+    { title: 'Meditation', icon: 'leaf-outline' },
+    { title: 'Cold Shower', icon: 'snow-outline' },
+    { title: 'Journaling', icon: 'pencil-outline' },
+    { title: 'No Caffeine', icon: 'cafe-outline' },
   ];
 
   const handleSave = async () => {
     if (!title) return;
     await addVision({
       title,
-      type: modalType, // 'Discipline' (Daily) or 'Vision' (Long-term)
+      type: modalType,
       reminder: isReminderEnabled,
       completedToday: false,
       progress: 0,
@@ -70,33 +74,40 @@ export default function GoalsScreen() {
         {/* SECTION 1: CORE DISCIPLINES */}
         <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Daily Disciplines</Text>
-            <Text style={styles.sectionSub}>Quick-add or create custom habits</Text>
+            <Text style={styles.sectionSub}>Tap a preset to activate or create custom</Text>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+        {/* UPDATED: 2-COLUMN GRID FOR PRESETS */}
+        <View style={styles.presetGrid}>
             {presets.map((p, i) => (
                 <TouchableOpacity 
                   key={i} 
                   style={styles.presetCard}
                   onPress={() => { setTitle(p.title); setModalType('Discipline'); setModalVisible(true); }}
                 >
-                    <Ionicons name={p.icon as any} size={22} color={MINT_GREEN} />
-                    <Text style={styles.presetText}>{p.title}</Text>
+                    <View style={styles.presetIconContainer}>
+                        <Ionicons name={p.icon as any} size={20} color={MINT_GREEN} />
+                    </View>
+                    <Text style={styles.presetText} numberOfLines={1}>{p.title}</Text>
                 </TouchableOpacity>
             ))}
-        </ScrollView>
+        </View>
 
+        {/* ACTIVE DISCIPLINES LIST */}
         <View style={styles.listContainer}>
-            {disciplines.map(d => (
+            <Text style={styles.listHeader}>Active Tracks</Text>
+            {disciplines.length > 0 ? disciplines.map(d => (
                 <View key={d.id} style={styles.disciplineRow}>
                     <Ionicons name="flash" size={18} color={MINT_GREEN} style={{ marginRight: 12 }} />
                     <Text style={styles.itemText}>{d.title}</Text>
-                    {d.reminder && <Ionicons name="notifications-outline" size={14} color={TEXT_GREY} />}
-                    <TouchableOpacity onPress={() => deleteVision(d.id)} style={{ marginLeft: 'auto' }}>
-                        <Ionicons name="close-circle" size={20} color="#F0F0F0" />
+                    {d.reminder && <Ionicons name="notifications-outline" size={14} color={TEXT_GREY} style={{marginRight: 10}} />}
+                    <TouchableOpacity onPress={() => deleteVision(d.id)}>
+                        <Ionicons name="close-circle" size={22} color="#F5F5F0" />
                     </TouchableOpacity>
                 </View>
-            ))}
+            )) : (
+                <Text style={styles.emptyText}>No disciplines active. Select a preset above.</Text>
+            )}
             <TouchableOpacity style={styles.addButton} onPress={() => { setModalType('Discipline'); setModalVisible(true); }}>
                 <Text style={styles.addButtonText}>+ Custom Discipline</Text>
             </TouchableOpacity>
@@ -131,7 +142,7 @@ export default function GoalsScreen() {
 
       </ScrollView>
 
-      {/* CENTERED MODAL */}
+      {/* MODAL REMAINING THE SAME TO PROTECT LOGIC */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior="padding" style={styles.centerCard}>
@@ -180,14 +191,18 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 22, fontWeight: '800', color: TEXT_DARK },
   sectionSub: { fontSize: 13, color: TEXT_GREY, fontWeight: '500', marginTop: 2 },
 
-  presetScroll: { marginBottom: 20, marginLeft: -5 },
-  presetCard: { backgroundColor: CARD_WHITE, paddingHorizontal: 20, paddingVertical: 15, borderRadius: 20, marginRight: 12, alignItems: 'center', flexDirection: 'row', gap: 10, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
-  presetText: { fontWeight: '700', color: TEXT_DARK },
+  // UPDATED: PRESET GRID STYLES
+  presetGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
+  presetCard: { backgroundColor: CARD_WHITE, width: '48%', padding: 15, borderRadius: 20, marginBottom: 12, alignItems: 'center', flexDirection: 'row', gap: 10, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+  presetIconContainer: { backgroundColor: '#F0FAF9', padding: 8, borderRadius: 10 },
+  presetText: { fontWeight: '700', color: TEXT_DARK, fontSize: 12, flex: 1 },
 
-  listContainer: { backgroundColor: CARD_WHITE, borderRadius: 28, padding: 15, marginBottom: 30 },
+  listContainer: { backgroundColor: CARD_WHITE, borderRadius: 28, padding: 20, marginBottom: 30 },
+  listHeader: { fontSize: 11, fontWeight: '800', color: TEXT_GREY, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
   disciplineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F5F5F0' },
-  itemText: { fontSize: 16, fontWeight: '600', color: TEXT_DARK, flex: 1 },
-  addButton: { paddingVertical: 15, alignItems: 'center' },
+  itemText: { fontSize: 15, fontWeight: '600', color: TEXT_DARK, flex: 1 },
+  emptyText: { textAlign: 'center', color: TEXT_GREY, fontSize: 13, marginVertical: 20 },
+  addButton: { paddingVertical: 15, alignItems: 'center', marginTop: 5 },
   addButtonText: { color: MINT_GREEN, fontWeight: '800', fontSize: 14 },
 
   divider: { height: 1, backgroundColor: '#E0E0E0', marginBottom: 30 },

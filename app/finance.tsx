@@ -2,11 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Modal,
-    SafeAreaView, ScrollView, StyleSheet, Text,
-    TextInput,
-    TouchableOpacity, View
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  SafeAreaView, ScrollView, StyleSheet, Text,
+  TextInput,
+  TouchableOpacity, View
 } from 'react-native';
 import { useValen } from '../src/context/ValenContext';
 
@@ -16,6 +17,8 @@ const MINT_GREEN = '#00BFA5';
 const TEXT_DARK = '#1A1A1A';
 const TEXT_GREY = '#8E8E93';
 
+const GOAL_ICONS = ['star', 'home', 'car', 'airplane', 'gift', 'heart', 'laptop'];
+
 export default function FinanceScreen() {
   const router = useRouter();
   const { financialData, addTransaction, addFinancialGoal, updateGoalProgress } = useValen();
@@ -23,7 +26,7 @@ export default function FinanceScreen() {
   // VIEW STATE
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [logModalVisible, setLogModalVisible] = useState(false);
-  const [goalModalVisible, setGoalModalVisible] = useState(false);
+  const [goalModalVisible, setGoalModalVisible] = useState(false); // New Goal State
   const [fundModalVisible, setFundModalVisible] = useState(false);
 
   // FORM STATES
@@ -31,6 +34,11 @@ export default function FinanceScreen() {
   const [logType, setLogType] = useState<'Income' | 'Expense'>('Expense');
   const [category, setCategory] = useState('Food');
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
+
+  // NEW GOAL STATES
+  const [goalName, setGoalName] = useState('');
+  const [goalTarget, setGoalTarget] = useState('');
+  const [goalIcon, setGoalIcon] = useState('star');
 
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -54,9 +62,7 @@ export default function FinanceScreen() {
 
   const handleFundGoal = async () => {
     if (!amount || !selectedGoal) return;
-    // 1. Update Goal Progress
     await updateGoalProgress(selectedGoal.id, Number(amount));
-    // 2. Log as Expense so it leaves the monthly balance
     await addTransaction({
       amount: amount,
       category: `Savings: ${selectedGoal.name}`,
@@ -77,6 +83,22 @@ export default function FinanceScreen() {
     });
     setLogModalVisible(false);
     setAmount('');
+  };
+
+  const handleCreateGoal = async () => {
+    if (!goalName || !goalTarget) {
+        Alert.alert("Missing Info", "Please provide a name and target amount.");
+        return;
+    }
+    await addFinancialGoal({
+        name: goalName,
+        target: Number(goalTarget),
+        current: 0,
+        icon: goalIcon
+    });
+    setGoalModalVisible(false);
+    setGoalName('');
+    setGoalTarget('');
   };
 
   return (
@@ -120,8 +142,6 @@ export default function FinanceScreen() {
                 </View>
             </View>
         </View>
-
-        
 
         {/* GOALS SECTION */}
         <View style={styles.sectionHeader}>
@@ -205,7 +225,45 @@ export default function FinanceScreen() {
         </View>
       </Modal>
 
-      {/* EXISTING TRANSACTION MODAL (Updated for R) */}
+      {/* NEW GOAL MODAL */}
+      <Modal visible={goalModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior="padding" style={styles.centerCard}>
+            <Text style={styles.modalHeading}>New Saving Goal</Text>
+            <TextInput 
+              style={styles.inputStyle} 
+              placeholder="Goal Name (e.g. New Car)" 
+              value={goalName}
+              onChangeText={setGoalName}
+            />
+            <TextInput 
+              style={styles.inputStyle} 
+              placeholder="Target Amount (R)" 
+              keyboardType="numeric"
+              value={goalTarget}
+              onChangeText={setGoalTarget}
+            />
+            <Text style={styles.subLabel}>Select Icon</Text>
+            <View style={styles.iconRow}>
+                {GOAL_ICONS.map(icon => (
+                    <TouchableOpacity 
+                        key={icon} 
+                        style={[styles.iconBtn, goalIcon === icon && {backgroundColor: MINT_GREEN}]} 
+                        onPress={() => setGoalIcon(icon)}
+                    >
+                        <Ionicons name={icon as any} size={18} color={goalIcon === icon ? '#FFF' : TEXT_GREY} />
+                    </TouchableOpacity>
+                ))}
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setGoalModalVisible(false)} style={styles.btnSec}><Text style={styles.btnSecText}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity onPress={handleCreateGoal} style={styles.btnPrim}><Text style={styles.btnPrimText}>Create Goal</Text></TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* LOG TRANSACTION MODAL */}
       <Modal visible={logModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior="padding" style={styles.centerCard}>
@@ -283,6 +341,10 @@ const styles = StyleSheet.create({
   centerCard: { backgroundColor: CARD_WHITE, borderRadius: 32, padding: 25 },
   modalHeading: { fontSize: 18, fontWeight: '900', color: TEXT_DARK, textAlign: 'center' },
   bigInput: { fontSize: 48, fontWeight: '900', textAlign: 'center', color: TEXT_DARK, marginVertical: 20 },
+  inputStyle: { backgroundColor: '#F5F5F0', padding: 15, borderRadius: 12, marginBottom: 15, fontSize: 16, fontWeight: '600', color: TEXT_DARK },
+  subLabel: { fontSize: 12, color: TEXT_GREY, fontWeight: '800', marginBottom: 10 },
+  iconRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 25 },
+  iconBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F5F5F0', justifyContent: 'center', alignItems: 'center' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 25 },
   chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F5F5F0' },
   activeChip: { backgroundColor: MINT_GREEN },

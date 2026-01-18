@@ -6,6 +6,7 @@ import {
   Modal,
   SafeAreaView,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -14,18 +15,26 @@ import {
 } from 'react-native';
 import AddTaskModal from '../../components/AddTaskModal';
 import { useValen } from '../../src/context/ValenContext';
-import { NotificationService } from '../../src/services/NotificationService'; // Import the service
+import { NotificationService } from '../../src/services/NotificationService';
 
 const { width, height } = Dimensions.get('window');
-const CREAM_BG = '#F5F5F0';
-const CARD_WHITE = '#FFFFFF';
 const MINT_GREEN = '#00BFA5';
-const TEXT_DARK = '#1A1A1A';
-const TEXT_GREY = '#8E8E93';
 
 export default function TasksScreen() {
-  const { tasks, folders, toggleTaskCompletion, addFolder, addTask } = useValen();
+  const { profile, tasks, folders, toggleTaskCompletion, addFolder, addTask } = useValen();
   
+  // --- THEME LOGIC ---
+  const isDark = profile?.theme === 'dark';
+  const COLORS = {
+    bg: isDark ? '#121212' : '#F5F5F0',
+    card: isDark ? '#1E1E1E' : '#FFFFFF',
+    textDark: isDark ? '#FFFFFF' : '#1A1A1A',
+    textGrey: isDark ? '#A0A0A0' : '#8E8E93',
+    border: isDark ? 'rgba(255,255,255,0.1)' : '#E5E5E0',
+    itemBg: isDark ? '#252525' : '#FAFAFA',
+    inputBg: isDark ? '#2A2A2A' : '#F5F5F0'
+  };
+
   // Folder States
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
@@ -42,7 +51,6 @@ export default function TasksScreen() {
   };
 
   const handleSaveTask = async (taskData: any) => {
-    // 1. Save to Database
     const newTask = {
       title: taskData.title,
       folder: taskData.folder,
@@ -53,26 +61,23 @@ export default function TasksScreen() {
     
     await addTask(newTask);
 
-    // 2. Schedule Notification if time and date are valid
     if (taskData.time && taskData.fullDate) {
       try {
         const [hours, minutes] = taskData.time.split(':');
         const reminderDate = new Date(taskData.fullDate);
         reminderDate.setHours(parseInt(hours), parseInt(minutes), 0);
 
-        // Only schedule if the selected time is in the future
         if (reminderDate > new Date()) {
           await NotificationService.scheduleTaskReminder(
-            Math.random().toString(), // Identifier for the notification
+            Math.random().toString(), 
             taskData.title,
-            reminderDate
+            reminderDate.getTime() 
           );
         }
       } catch (error) {
         console.error("Failed to schedule notification:", error);
       }
     }
-
     setTaskModalVisible(false);
   };
 
@@ -84,11 +89,12 @@ export default function TasksScreen() {
   const currentMonth = new Date().toLocaleString('default', { month: 'short' });
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.bg }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       <View style={styles.header}>
-        <Text style={styles.title}>Collections</Text>
+        <Text style={[styles.title, { color: COLORS.textDark }]}>Collections</Text>
         <TouchableOpacity 
-          style={styles.addFolderBtn} 
+          style={[styles.addFolderBtn, { backgroundColor: COLORS.card }]} 
           onPress={() => setTaskModalVisible(true)}
         >
           <Ionicons name="add" size={24} color={MINT_GREEN} />
@@ -100,23 +106,26 @@ export default function TasksScreen() {
           {folders.map((folder) => (
             <TouchableOpacity 
               key={folder.id} 
-              style={styles.folderCard}
+              style={[styles.folderCard, { backgroundColor: COLORS.card }]}
               onPress={() => setSelectedFolder(folder.name)}
             >
               <View style={styles.folderIconHeader}>
                 <Ionicons name={folder.icon || 'folder'} size={22} color={MINT_GREEN} />
-                <View style={styles.badge}><Text style={styles.badgeText}>{getTaskCount(folder.name)}</Text></View>
+                <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(0,191,165,0.1)' : '#F0FAF9' }]}><Text style={styles.badgeText}>{getTaskCount(folder.name)}</Text></View>
               </View>
               <View>
-                <Text style={styles.folderName}>{folder.name}</Text>
-                <Text style={styles.folderCount}>View All</Text>
+                <Text style={[styles.folderName, { color: COLORS.textDark }]}>{folder.name}</Text>
+                <Text style={[styles.folderCount, { color: COLORS.textGrey }]}>View All</Text>
               </View>
             </TouchableOpacity>
           ))}
           
-          <TouchableOpacity style={[styles.folderCard, styles.dottedBorder]} onPress={() => setFolderModalVisible(true)}>
-            <Ionicons name="add-circle-outline" size={32} color={TEXT_GREY} />
-            <Text style={styles.addText}>New Folder</Text>
+          <TouchableOpacity 
+            style={[styles.folderCard, styles.dottedBorder, { borderColor: COLORS.border }]} 
+            onPress={() => setFolderModalVisible(true)}
+          >
+            <Ionicons name="add-circle-outline" size={32} color={COLORS.textGrey} />
+            <Text style={[styles.addText, { color: COLORS.textGrey }]}>New Folder</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -124,11 +133,12 @@ export default function TasksScreen() {
       {/* MODAL: CREATE NEW FOLDER */}
       <Modal visible={folderModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlayCenter}>
-          <View style={styles.smallModalSheet}>
-            <Text style={styles.modalHeading}>New Collection</Text>
+          <View style={[styles.smallModalSheet, { backgroundColor: COLORS.card }]}>
+            <Text style={[styles.modalHeading, { color: COLORS.textDark }]}>New Collection</Text>
             <TextInput 
-              style={styles.input}
+              style={[styles.input, { backgroundColor: COLORS.inputBg, color: COLORS.textDark }]}
               placeholder="Collection Name"
+              placeholderTextColor={COLORS.textGrey}
               value={newFolderName}
               onChangeText={setNewFolderName}
               autoFocus
@@ -145,7 +155,6 @@ export default function TasksScreen() {
         </View>
       </Modal>
 
-      {/* UNIVERSAL TASK ADD MODAL */}
       <AddTaskModal 
         visible={taskModalVisible}
         onClose={() => setTaskModalVisible(false)}
@@ -157,14 +166,14 @@ export default function TasksScreen() {
       {/* MODAL: FOLDER DETAIL VIEW */}
       <Modal visible={!!selectedFolder} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.detailSheet}>
+          <View style={[styles.detailSheet, { backgroundColor: COLORS.card }]}>
             <View style={styles.detailHeader}>
               <View>
-                <Text style={styles.detailTitle}>{selectedFolder}</Text>
-                <Text style={styles.folderSub}>{activeTasks.length} total tasks</Text>
+                <Text style={[styles.detailTitle, { color: COLORS.textDark }]}>{selectedFolder}</Text>
+                <Text style={[styles.folderSub, { color: COLORS.textGrey }]}>{activeTasks.length} total tasks</Text>
               </View>
               <TouchableOpacity onPress={() => setSelectedFolder(null)}>
-                <Ionicons name="close-circle" size={32} color="#DDD" />
+                <Ionicons name="close-circle" size={32} color={isDark ? "#333" : "#DDD"} />
               </TouchableOpacity>
             </View>
 
@@ -172,20 +181,20 @@ export default function TasksScreen() {
               data={activeTasks}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <View style={styles.taskItem}>
+                <View style={[styles.taskItem, { backgroundColor: COLORS.itemBg }]}>
                   <TouchableOpacity 
-                    style={[styles.checkbox, item.completed && styles.checked]} 
+                    style={[styles.checkbox, { borderColor: isDark ? '#444' : '#DDD' }, item.completed && styles.checked]} 
                     onPress={() => toggleTaskCompletion(item.id, item.completed)}
                   >
                     {item.completed && <Ionicons name="checkmark" size={16} color="#FFF" />}
                   </TouchableOpacity>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.taskTitle, item.completed && styles.strikethrough]}>{item.title}</Text>
-                    <Text style={styles.taskSub}>{item.priority} • Due {currentMonth} {item.dueDate}</Text>
+                    <Text style={[styles.taskTitle, { color: COLORS.textDark }, item.completed && styles.strikethrough]}>{item.title}</Text>
+                    <Text style={[styles.taskSub, { color: COLORS.textGrey }]}>{item.priority} • Due {currentMonth} {item.dueDate}</Text>
                   </View>
                 </View>
               )}
-              ListEmptyComponent={<Text style={styles.emptyText}>No tasks here yet.</Text>}
+              ListEmptyComponent={<Text style={[styles.emptyText, { color: COLORS.textGrey }]}>No tasks here yet.</Text>}
             />
 
             <TouchableOpacity 
@@ -203,41 +212,41 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: CREAM_BG },
+  container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  title: { fontSize: 28, fontWeight: '800', color: TEXT_DARK },
-  addFolderBtn: { backgroundColor: CARD_WHITE, padding: 8, borderRadius: 12 },
+  title: { fontSize: 28, fontWeight: '800' },
+  addFolderBtn: { padding: 8, borderRadius: 12 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  folderCard: { backgroundColor: CARD_WHITE, width: (width - 55) / 2, height: 150, borderRadius: 24, padding: 20, marginBottom: 15, justifyContent: 'space-between' },
+  folderCard: { width: (width - 55) / 2, height: 150, borderRadius: 24, padding: 20, marginBottom: 15, justifyContent: 'space-between', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   folderIconHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  badge: { backgroundColor: '#F0FAF9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   badgeText: { fontSize: 12, fontWeight: '700', color: MINT_GREEN },
-  folderName: { fontSize: 18, fontWeight: '700', color: TEXT_DARK },
-  folderCount: { fontSize: 12, color: TEXT_GREY, marginTop: 4 },
-  dottedBorder: { borderWidth: 2, borderColor: '#E5E5E0', borderStyle: 'dashed', backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
-  addText: { color: TEXT_GREY, fontWeight: '600', marginTop: 10 },
+  folderName: { fontSize: 18, fontWeight: '700' },
+  folderCount: { fontSize: 12, marginTop: 4 },
+  dottedBorder: { borderWidth: 2, borderStyle: 'dashed', backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
+  addText: { fontWeight: '600', marginTop: 10 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  smallModalSheet: { backgroundColor: '#FFF', width: '85%', borderRadius: 24, padding: 24 },
-  modalHeading: { fontSize: 18, fontWeight: '800', color: TEXT_DARK },
-  input: { backgroundColor: '#F5F5F0', padding: 15, borderRadius: 12, fontSize: 16, marginTop: 15, color: TEXT_DARK },
+  smallModalSheet: { width: '85%', borderRadius: 24, padding: 24 },
+  modalHeading: { fontSize: 18, fontWeight: '800' },
+  input: { padding: 15, borderRadius: 12, fontSize: 16, marginTop: 15 },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
   cancelBtn: { flex: 1, height: 50, justifyContent: 'center', alignItems: 'center' },
-  cancelText: { color: TEXT_GREY, fontWeight: '600' },
+  cancelText: { color: '#8E8E93', fontWeight: '600' },
   createBtn: { flex: 2, backgroundColor: MINT_GREEN, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   createText: { color: '#FFF', fontWeight: '700' },
-  detailSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: height * 0.85, padding: 25 },
+  detailSheet: { borderTopLeftRadius: 32, borderTopRightRadius: 32, height: height * 0.85, padding: 25 },
   detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25 },
-  detailTitle: { fontSize: 26, fontWeight: '800', color: TEXT_DARK },
-  folderSub: { fontSize: 14, color: TEXT_GREY, marginTop: 2 },
-  taskItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, backgroundColor: '#FAFAFA', padding: 15, borderRadius: 16 },
-  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: '#DDD', marginRight: 15, justifyContent: 'center', alignItems: 'center' },
+  detailTitle: { fontSize: 26, fontWeight: '800' },
+  folderSub: { fontSize: 14, marginTop: 2 },
+  taskItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, padding: 15, borderRadius: 16 },
+  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, marginRight: 15, justifyContent: 'center', alignItems: 'center' },
   checked: { backgroundColor: MINT_GREEN, borderColor: MINT_GREEN },
-  taskTitle: { fontSize: 16, fontWeight: '600', color: TEXT_DARK },
-  strikethrough: { textDecorationLine: 'line-through', color: TEXT_GREY },
-  taskSub: { fontSize: 12, color: TEXT_GREY, marginTop: 2 },
-  emptyText: { textAlign: 'center', marginTop: 40, color: TEXT_GREY },
+  taskTitle: { fontSize: 16, fontWeight: '600' },
+  strikethrough: { textDecorationLine: 'line-through', color: '#8E8E93' },
+  taskSub: { fontSize: 12, marginTop: 2 },
+  emptyText: { textAlign: 'center', marginTop: 40 },
   folderAddBtn: { backgroundColor: MINT_GREEN, flexDirection: 'row', height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 10, shadowColor: MINT_GREEN, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12 },
   folderAddBtnText: { color: '#FFF', fontWeight: '700', fontSize: 16, marginLeft: 8 }
 });
