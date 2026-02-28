@@ -28,9 +28,16 @@ export default function AddTaskModal({ visible, onClose, folders, onSave, initia
   const [showCalendar, setShowCalendar] = useState(false); // iOS Logic
   const [dropdownVisible, setDropdownVisible] = useState(false);
 
+  // --- FIX: Ensure selectedFolder updates when initialFolder changes or modal opens ---
   useEffect(() => {
-    if (initialFolder) setSelectedFolder(initialFolder);
-  }, [initialFolder, visible]);
+    if (visible) {
+      if (initialFolder) {
+        setSelectedFolder(initialFolder);
+      } else {
+        setSelectedFolder('Personal');
+      }
+    }
+  }, [visible, initialFolder]);
 
   // Handle Date/Time Change
   const onChange = (event: any, selectedDate?: Date) => {

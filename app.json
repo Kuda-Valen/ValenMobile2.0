@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "ValenMobile",
+    "name": "Valen",
     "slug": "ValenMobile",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "valenmobile",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/logo.png",
@@ -14,16 +14,36 @@
       "backgroundColor": "#F5F5F0"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.ValenMobile"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.valen.productivity",
+      "buildNumber": "1",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSPhotoLibraryUsageDescription": "Valen needs access to your gallery to let you upload a profile picture for your Neural ID Card.",
+        "NSCameraUsageDescription": "Valen needs access to your camera so you can take a profile photo directly.",
+        "NSNotificationsUsageDescription": "Valen sends smart nudges and session alerts to help you stay in deep work mode."
+      }
     },
     "android": {
+      "package": "com.valen.productivity",
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#F5F5F0"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "POST_NOTIFICATIONS"
+      ],
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
@@ -32,10 +52,25 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Valen to access the microphone for voice-based neural context."
+        }
+      ],
+      "expo-font",
       "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7c64777d-5ddb-4784-bf6f-3b72ef7d3008"
+      }
+    },
+    "owner": "kudavalen"
   }
 }

@@ -3,18 +3,16 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import {
   Alert,
-  Dimensions, SafeAreaView, ScrollView, StyleSheet,
+  Dimensions, SafeAreaView, ScrollView,
+  StatusBar,
+  StyleSheet,
   Text, TouchableOpacity, View
 } from 'react-native';
 import { useValen } from '../src/context/ValenContext';
 
 const { width } = Dimensions.get('window');
 
-const CREAM_BG = '#F5F5F0'; 
-const CARD_WHITE = '#FFFFFF';
 const MINT_GREEN = '#00BFA5';
-const TEXT_DARK = '#1A1A1A';
-const TEXT_GREY = '#8E8E93';
 
 const ALL_BADGES = [
   { id: 'deep_diver', name: 'Deep Diver', icon: 'water', requirement: 'Complete a single focus session longer than 120 minutes.', color: '#007AFF' },
@@ -26,6 +24,18 @@ const ALL_BADGES = [
 export default function AchievementsScreen() {
   const router = useRouter();
   const { profile } = useValen();
+
+  // --- THEME MAPPING ---
+  const isDark = profile?.theme === 'dark';
+  const theme = {
+    bg: isDark ? '#121212' : '#F5F5F0',
+    card: isDark ? '#1E1E1E' : '#FFFFFF',
+    textDark: isDark ? '#FFFFFF' : '#1A1A1A',
+    textGrey: isDark ? '#A0A0A0' : '#8E8E93',
+    itemBg: isDark ? '#2A2A2A' : '#F5F5F0',
+    border: isDark ? 'rgba(255, 255, 255, 0.08)' : '#EEE',
+  };
+
   const userBadges = profile?.badges || [];
   const level = profile?.level || 1;
   const xp = profile?.xp || 0;
@@ -48,22 +58,23 @@ export default function AchievementsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={TEXT_DARK} />
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.card }]}>
+          <Ionicons name="chevron-back" size={24} color={theme.textDark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Neural Archives</Text>
+        <Text style={[styles.headerTitle, { color: theme.textDark }]}>Neural Archives</Text>
         <View style={{ width: 45 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* RANK ASCENSION SECTION - NOW MATCHES OTHER BLOCKS */}
-        <View style={styles.rankCard}>
+        {/* RANK ASCENSION SECTION */}
+        <View style={[styles.rankCard, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: isDark ? 1 : 0 }]}>
           <View style={styles.rankHeader}>
             <View>
-              <Text style={styles.labelCaps}>Current Standing</Text>
-              <Text style={styles.rankTitle}>{getRankName(level)}</Text>
+              <Text style={[styles.labelCaps, { color: theme.textGrey }]}>Current Standing</Text>
+              <Text style={[styles.rankTitle, { color: theme.textDark }]}>{getRankName(level)}</Text>
             </View>
             <View style={styles.levelCircle}>
               <Text style={styles.levelText}>{level}</Text>
@@ -71,36 +82,36 @@ export default function AchievementsScreen() {
           </View>
           
           <View style={styles.xpRow}>
-            <Text style={styles.xpText}>{xp} XP</Text>
-            <Text style={styles.xpText}>{nextLevelXP} XP</Text>
+            <Text style={[styles.xpText, { color: theme.textGrey }]}>{xp} XP</Text>
+            <Text style={[styles.xpText, { color: theme.textGrey }]}>{nextLevelXP} XP</Text>
           </View>
-          <View style={styles.xpTrack}>
+          <View style={[styles.xpTrack, { backgroundColor: theme.itemBg }]}>
             <View style={[styles.xpFill, { width: `${(xp % 1000) / 10}%` }]} />
           </View>
           <Text style={styles.rankStatus}>Level {level} Ascension in progress...</Text>
         </View>
 
         {/* BADGE GRID */}
-        <Text style={styles.sectionTitle}>Mastery Badges</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textDark }]}>Mastery Badges</Text>
         <View style={styles.badgeGrid}>
           {ALL_BADGES.map((badge) => {
             const isUnlocked = userBadges.includes(badge.id);
             return (
               <TouchableOpacity 
                 key={badge.id} 
-                style={[styles.badgeItem, !isUnlocked && styles.badgeLocked]} 
+                style={[styles.badgeItem, { backgroundColor: theme.card }, !isUnlocked && styles.badgeLocked]} 
                 onPress={() => showRequirement(badge)}
               >
-                <View style={[styles.badgeIconBg, { backgroundColor: isUnlocked ? badge.color : '#F0F0F0' }]}>
-                  <Ionicons name={badge.icon as any} size={32} color={isUnlocked ? '#FFF' : '#AAA'} />
+                <View style={[styles.badgeIconBg, { backgroundColor: isUnlocked ? badge.color : (isDark ? '#333' : '#F0F0F0') }]}>
+                  <Ionicons name={badge.icon as any} size={32} color={isUnlocked ? '#FFF' : (isDark ? '#555' : '#AAA')} />
                   {!isUnlocked && (
-                    <View style={styles.lockBadge}>
-                      <Ionicons name="lock-closed" size={10} color={TEXT_GREY} />
+                    <View style={[styles.lockBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                      <Ionicons name="lock-closed" size={10} color={theme.textGrey} />
                     </View>
                   )}
                 </View>
-                <Text style={styles.badgeName}>{badge.name}</Text>
-                <Text style={styles.statusText}>{isUnlocked ? 'ARCHIVED' : 'LOCKED'}</Text>
+                <Text style={[styles.badgeName, { color: theme.textDark }]}>{badge.name}</Text>
+                <Text style={[styles.statusText, { color: theme.textGrey }]}>{isUnlocked ? 'ARCHIVED' : 'LOCKED'}</Text>
               </TouchableOpacity>
             );
           })}
@@ -111,32 +122,31 @@ export default function AchievementsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: CREAM_BG },
+  container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  backBtn: { width: 45, height: 45, borderRadius: 22, backgroundColor: CARD_WHITE, justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: TEXT_DARK },
+  backBtn: { width: 45, height: 45, borderRadius: 22, justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  headerTitle: { fontSize: 18, fontWeight: '900' },
   scrollContent: { padding: 20 },
   
-  // RANK CARD UPDATED TO MATCH DASHBOARD STYLE
-  rankCard: { backgroundColor: CARD_WHITE, borderRadius: 32, padding: 25, marginBottom: 30, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
+  rankCard: { borderRadius: 32, padding: 25, marginBottom: 30, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   rankHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  levelCircle: { width: 45, height: 45, borderRadius: 23, backgroundColor: MINT_GREEN, justifyContent: 'center', alignItems: 'center' },
+  levelCircle: { width: 45, height: 45, borderRadius: 23, backgroundColor: '#00BFA5', justifyContent: 'center', alignItems: 'center' },
   levelText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
-  labelCaps: { color: TEXT_GREY, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 5 },
-  rankTitle: { color: TEXT_DARK, fontSize: 24, fontWeight: '900' },
+  labelCaps: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 5 },
+  rankTitle: { fontSize: 24, fontWeight: '900' },
   
   xpRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  xpText: { color: TEXT_GREY, fontSize: 12, fontWeight: '700' },
-  xpTrack: { height: 8, backgroundColor: CREAM_BG, borderRadius: 4, overflow: 'hidden' },
-  xpFill: { height: '100%', backgroundColor: MINT_GREEN },
-  rankStatus: { color: MINT_GREEN, fontSize: 11, fontWeight: '800', marginTop: 15, textAlign: 'center', letterSpacing: 0.5 },
+  xpText: { fontSize: 12, fontWeight: '700' },
+  xpTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
+  xpFill: { height: '100%', backgroundColor: '#00BFA5' },
+  rankStatus: { color: '#00BFA5', fontSize: 11, fontWeight: '800', marginTop: 15, textAlign: 'center', letterSpacing: 0.5 },
   
-  sectionTitle: { fontSize: 20, fontWeight: '900', color: TEXT_DARK, marginBottom: 20, paddingLeft: 5 },
+  sectionTitle: { fontSize: 20, fontWeight: '900', marginBottom: 20, paddingLeft: 5 },
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  badgeItem: { width: (width - 60) / 2, backgroundColor: CARD_WHITE, padding: 20, borderRadius: 28, alignItems: 'center', marginBottom: 15, elevation: 2 },
+  badgeItem: { width: (width - 60) / 2, padding: 20, borderRadius: 28, alignItems: 'center', marginBottom: 15, elevation: 2 },
   badgeLocked: { opacity: 0.8 },
   badgeIconBg: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  lockBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: CARD_WHITE, padding: 4, borderRadius: 10, borderWidth: 1, borderColor: '#EEE' },
-  badgeName: { fontSize: 14, fontWeight: '800', color: TEXT_DARK },
-  statusText: { fontSize: 10, fontWeight: '700', color: TEXT_GREY, marginTop: 5 },
+  lockBadge: { position: 'absolute', bottom: 0, right: 0, padding: 4, borderRadius: 10, borderWidth: 1 },
+  badgeName: { fontSize: 14, fontWeight: '800' },
+  statusText: { fontSize: 10, fontWeight: '700', marginTop: 5 },
 });

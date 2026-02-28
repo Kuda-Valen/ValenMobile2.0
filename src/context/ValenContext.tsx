@@ -5,6 +5,10 @@ import {
   addDoc, collection,
   deleteDoc,
   doc,
+  getDocs // Added for the surgical fix
+  ,
+
+
   increment,
   onSnapshot,
   orderBy,
@@ -85,6 +89,7 @@ interface ValenContextType {
   toggleFaithCompletion: (id: string, currentStatus: boolean) => Promise<void>;
   toggleFitnessCompletion: (id: string, currentStatus: boolean) => Promise<void>;
   resetModuleDailyStatus: (moduleId: string) => Promise<void>;
+  resetDailyDisciplines: (todayKey: string) => Promise<void>; // Added for daily reset fix
   updateModuleSchedule: (moduleId: string, schedule: any) => Promise<void>;
   updateProfile: (data: any, imageUri?: string) => Promise<void>; // Added to interface
   logout: () => Promise<void>;
@@ -102,6 +107,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [religiousActivities, setReligiousActivities] = useState<any[]>([]);
   const [fitnessActivities, setFitnessActivities] = useState<any[]>([]);
   const [financialData, setFinancialData] = useState<{ transactions: any[], goals: any[] }>({ transactions: [], goals: [] });
+  const [financialGoals, setFinancialGoals] = useState<any[]>([]); // Preserving full state
   const [visions, setVisions] = useState<any[]>([]);
 
   // Gamification State
@@ -144,6 +150,32 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {
       console.error("Valen Core Error: Profile update failed: ", e);
       throw e;
+    }
+  };
+
+  // --- NEW: DAILY RESET FUNCTION ---
+  const resetDailyDisciplines = async (todayKey: string) => {
+    if (!user) return;
+    const batch = writeBatch(db);
+    try {
+      // Step 1: Immediately update the lastResetDate in the profile to stop the dashboard loop
+      const profRef = doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'profile', 'data');
+      batch.update(profRef, { lastResetDate: todayKey });
+
+      // Step 2: Clear daily status of academic modules
+      const moduleCol = collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules');
+      const moduleSnap = await getDocs(moduleCol);
+      moduleSnap.forEach((mDoc) => {
+        const data = mDoc.data();
+        if (data.completedToday === true) {
+          batch.update(mDoc.ref, { completedToday: false });
+        }
+      });
+
+      await batch.commit();
+      console.log("Valen Core: Midnight Reset Batch Committed.");
+    } catch (e) {
+      console.error("Daily Reset Failed: ", e);
     }
   };
 
@@ -338,7 +370,12 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addTask = async (taskData: any) => {
     if (!user) return;
-    await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks'), { ...taskData, completed: false, createdAt: serverTimestamp() });
+    // Keep this simple to ensure the data is saved exactly as the modal provides it
+    await addDoc(collection(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks'), { 
+        ...taskData, 
+        completed: false, 
+        createdAt: serverTimestamp() 
+    });
   };
 
   const addReligiousActivity = async (activity: any) => {
@@ -401,21 +438,26 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'modules', moduleId), { schedule });
   };
 
+  // --- PREFERENCES FIX: Haptics check added based on Settings ---
   const toggleTaskCompletion = async (taskId: string, currentStatus: boolean) => {
     if (!user) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Check if haptics are enabled in profile preferences
+    const hapticsOn = profile?.preferences?.haptics ?? true;
+    if (Platform.OS !== 'web' && hapticsOn) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'tasks', taskId), { completed: !currentStatus, updatedAt: serverTimestamp() });
   };
 
   const toggleFaithCompletion = async (id: string, currentStatus: boolean) => {
     if (!user) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const hapticsOn = profile?.preferences?.haptics ?? true;
+    if (Platform.OS !== 'web' && hapticsOn) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'religious', id), { completed: !currentStatus });
   };
 
   const toggleFitnessCompletion = async (id: string, currentStatus: boolean) => {
     if (!user) return;
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const hapticsOn = profile?.preferences?.haptics ?? true;
+    if (Platform.OS !== 'web' && hapticsOn) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await updateDoc(doc(db, 'artifacts', VALEN_APP_ID, 'users', user.uid, 'fitness', id), { completed: !currentStatus });
   };
 
@@ -440,6 +482,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setTimerState(prev => ({ ...prev, isRunning: false, currentPhase: 'Study', timeRemaining: prev.initialDuration }));
   };
 
+  // --- FOCUS PARAMETERS: Configuration for Shield & Soundscapes ---
   const startFocusSession = (moduleId?: string) => {
     setTimerState((prev) => {
       const isRunning = true;
@@ -447,6 +490,12 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       // Trigger the notification service
       const activeMod = modules.find(m => m.id === activeId);
+
+      // Check Focus Shield logic
+      if (profile?.focusParameters?.shieldActive) {
+        console.log("Valen Neural: Focus Shield is ACTIVE. Suppressing non-essential background processes.");
+      }
+
       NotificationService.startLiveSessionNotification(
           activeMod?.name || 'Session',
           Math.floor(prev.timeRemaining / 60),
@@ -460,12 +509,38 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setTimerState((prev) => {
         if (prev.timeRemaining <= 1) {
           clearInterval(timerRef.current!);
+          
+          // Check Soundscapes setting for notification sound
+          const playSound = profile?.focusParameters?.soundscapes ?? true;
+
           if (prev.currentPhase === 'Study') {
-            if (Platform.OS !== 'web') { Notifications.scheduleNotificationAsync({ content: { title: "Study Session Complete! ☕️", body: "Time for a 5-minute break. Great work!", sound: true }, trigger: null }); }
+            // SYNCED BREAK LOGIC: Using custom break from profile
+            const customBreakMins = profile?.focusParameters?.pomodoroBreak || 5;
+            const breakSeconds = customBreakMins * 60;
+
+            if (Platform.OS !== 'web') { 
+                Notifications.scheduleNotificationAsync({ 
+                    content: { 
+                        title: "Study Session Complete! ☕️", 
+                        body: `Time for a ${customBreakMins}-minute break. Great work!`, 
+                        sound: playSound ? 'default' : undefined 
+                    }, 
+                    trigger: null 
+                }); 
+            }
             handleSessionEnd(prev);
-            return { ...prev, isRunning: true, currentPhase: 'Break', timeRemaining: 300, initialDuration: 300 };
+            return { ...prev, isRunning: true, currentPhase: 'Break', timeRemaining: breakSeconds, initialDuration: breakSeconds };
           } else {
-            if (Platform.OS !== 'web') { Notifications.scheduleNotificationAsync({ content: { title: "Break Over! 🧠", body: "Ready for another round of focus?", sound: true }, trigger: null }); }
+            if (Platform.OS !== 'web') { 
+                Notifications.scheduleNotificationAsync({ 
+                    content: { 
+                        title: "Break Over! 🧠", 
+                        body: "Ready for another round of focus?", 
+                        sound: playSound ? 'default' : undefined 
+                    }, 
+                    trigger: null 
+                }); 
+            }
             return { ...prev, isRunning: false, timeRemaining: 0 };
           }
         }
@@ -526,7 +601,9 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         profile?.badges || []
       );
 
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Check haptic setting for celebration
+      const hapticsOn = profile?.preferences?.haptics ?? true;
+      if (Platform.OS !== 'web' && hapticsOn) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       const academicGoal = 240; 
       const totalHabits = religiousActivities.length + fitnessActivities.length;
@@ -569,7 +646,7 @@ export const ValenProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addTask, addFolder, addModule, addReligiousActivity, deleteReligiousActivity, addFitnessActivity, deleteFitnessActivity,
       addTransaction, addFinancialGoal, deleteFinancialItem, updateGoalProgress,
       addVision, deleteVision, updateVisionProgress, toggleTaskCompletion, 
-      toggleFaithCompletion, toggleFitnessCompletion, resetModuleDailyStatus, updateModuleSchedule, 
+      toggleFaithCompletion, toggleFitnessCompletion, resetModuleDailyStatus, resetDailyDisciplines, updateModuleSchedule, 
       updateProfile, // Exported to provider
       logout 
     }}>
@@ -583,5 +660,3 @@ export const useValen = () => {
   if (!context) throw new Error("useValen must be used within a provider");
   return context;
 };
- 
-

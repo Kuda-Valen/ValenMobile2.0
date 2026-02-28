@@ -14,7 +14,7 @@ import {
   View
 } from 'react-native';
 import AddTaskModal from '../../components/AddTaskModal';
-import { useValen } from '../../src/context/ValenContext';
+import { useValen } from '../../src/context/ValenContext'; // Fixed syntax error here (removed = useValen())
 import { NotificationService } from '../../src/services/NotificationService';
 
 const { width, height } = Dimensions.get('window');
@@ -61,23 +61,31 @@ export default function TasksScreen() {
     
     await addTask(newTask);
 
+    // --- FIX: Robust Notification Scheduling ---
     if (taskData.time && taskData.fullDate) {
       try {
         const [hours, minutes] = taskData.time.split(':');
         const reminderDate = new Date(taskData.fullDate);
-        reminderDate.setHours(parseInt(hours), parseInt(minutes), 0);
+        
+        // Ensure values are parsed as base-10 integers
+        reminderDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
 
-        if (reminderDate > new Date()) {
+        // --- SURGICAL FIX FOR TRIGGER ERROR ---
+        // Only schedule if the date is valid and is in the future
+        if (!isNaN(reminderDate.getTime()) && reminderDate.getTime() > Date.now()) {
+          // Passing the actual Date object to satisfy the trigger requirement
           await NotificationService.scheduleTaskReminder(
-            Math.random().toString(), 
+            `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`, 
             taskData.title,
-            reminderDate.getTime() 
+            reminderDate // Pass the Date object directly
           );
         }
       } catch (error) {
-        console.error("Failed to schedule notification:", error);
+        console.error("Valen Core: Failed to schedule notification:", error);
       }
     }
+    // --- END FIX ---
+
     setTaskModalVisible(false);
   };
 
@@ -196,14 +204,6 @@ export default function TasksScreen() {
               )}
               ListEmptyComponent={<Text style={[styles.emptyText, { color: COLORS.textGrey }]}>No tasks here yet.</Text>}
             />
-
-            <TouchableOpacity 
-              style={styles.folderAddBtn} 
-              onPress={() => setTaskModalVisible(true)}
-            >
-              <Ionicons name="add" size={24} color="#FFF" />
-              <Text style={styles.folderAddBtnText}>Add Task</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -246,7 +246,5 @@ const styles = StyleSheet.create({
   taskTitle: { fontSize: 16, fontWeight: '600' },
   strikethrough: { textDecorationLine: 'line-through', color: '#8E8E93' },
   taskSub: { fontSize: 12, marginTop: 2 },
-  emptyText: { textAlign: 'center', marginTop: 40 },
-  folderAddBtn: { backgroundColor: MINT_GREEN, flexDirection: 'row', height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 10, shadowColor: MINT_GREEN, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12 },
-  folderAddBtnText: { color: '#FFF', fontWeight: '700', fontSize: 16, marginLeft: 8 }
+  emptyText: { textAlign: 'center', marginTop: 40 }
 });

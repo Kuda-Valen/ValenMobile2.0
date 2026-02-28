@@ -7,7 +7,7 @@ import {
   signInWithEmailAndPassword
 } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,16 +20,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useColorScheme // Added for dynamic theme detection
+  ,
   View
 } from 'react-native';
 import { auth, db, VALEN_APP_ID } from '../../src/services/firebase';
 
 const { width } = Dimensions.get('window');
-const CREAM_BG = '#F5F5F0';
 const MINT_GREEN = '#00BFA5';
-const CARD_WHITE = '#FFFFFF';
-const TEXT_DARK = '#1A1A1A';
-const TEXT_GREY = '#8E8E93';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -37,6 +35,21 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  // --- THEME PROGRAMMING (ONYX MAPPING) ---
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark'; // Maps to system or can be hardcoded to true
+
+  const theme = {
+    bg: isDark ? '#121212' : '#F5F5F0',
+    card: isDark ? '#1E1E1E' : '#FFFFFF',
+    textDark: isDark ? '#FFFFFF' : '#1A1A1A',
+    textGrey: isDark ? '#A0A0A0' : '#8E8E93',
+    inputBg: isDark ? '#2A2A2A' : '#F8F8F6',
+    border: isDark ? 'rgba(255,255,255,0.08)' : '#EEE',
+    button: isDark ? '#FFFFFF' : '#1A1A1A',
+    buttonText: isDark ? '#121212' : '#FFFFFF'
+  };
 
   // ONBOARDING STEPS: 1 = Auth, 2 = Neural Config (AI Questions), 3 = Visual ID (Photo)
   const [step, setStep] = useState(1);
@@ -111,6 +124,7 @@ export default function LoginScreen() {
         profession: profession,
         photoURL: profileImage || '',
         email: user.email,
+        theme: isDark ? 'dark' : 'light',
         createdAt: serverTimestamp(),
         lastResetDate: today,
         dailyFocusMinutes: 0,
@@ -135,25 +149,32 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
-      <View style={styles.card}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.container, { backgroundColor: theme.bg }]}>
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: isDark ? 1 : 0 }]}>
         {/* ROUNDED LOGO */}
         <Image source={require('../../assets/images/logo.png')} style={styles.logo} />
 
         {step === 1 && (
           <View style={{ width: '100%', alignItems: 'center' }}>
-            <Text style={styles.title}>{isLogin ? 'Authorized Access' : 'Neural Enrollment'}</Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.title, { color: theme.textDark }]}>{isLogin ? 'Authorized Access' : 'Neural Enrollment'}</Text>
+            <Text style={[styles.subtitle, { color: theme.textGrey }]}>
               {isLogin ? 'Securely access your Valen Assistant.' : 'Initialize your unique executive profile.'}
             </Text>
 
             {!isLogin && (
-              <TextInput style={styles.input} placeholder="Full Name" value={username} onChangeText={setUsername} />
+              <TextInput 
+                style={[styles.input, { backgroundColor: theme.inputBg, color: theme.textDark, borderColor: theme.border }]} 
+                placeholder="Full Name" 
+                placeholderTextColor={theme.textGrey}
+                value={username} 
+                onChangeText={setUsername} 
+              />
             )}
             
             <TextInput 
-              style={styles.input} 
+              style={[styles.input, { backgroundColor: theme.inputBg, color: theme.textDark, borderColor: theme.border }]} 
               placeholder="Email address" 
+              placeholderTextColor={theme.textGrey}
               value={email} 
               onChangeText={setEmail} 
               autoCapitalize="none" 
@@ -161,8 +182,9 @@ export default function LoginScreen() {
             />
             
             <TextInput 
-              style={styles.input} 
+              style={[styles.input, { backgroundColor: theme.inputBg, color: theme.textDark, borderColor: theme.border }]} 
               placeholder="Password" 
+              placeholderTextColor={theme.textGrey}
               value={password} 
               onChangeText={setPassword} 
               secureTextEntry 
@@ -174,14 +196,14 @@ export default function LoginScreen() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={styles.mainBtn} onPress={handleAuthentication} disabled={loading}>
-              {loading ? <ActivityIndicator color="#FFF" /> : (
-                <Text style={styles.mainBtnText}>{isLogin ? 'Initiate Login' : 'Continue to Config'}</Text>
+            <TouchableOpacity style={[styles.mainBtn, { backgroundColor: theme.button }]} onPress={handleAuthentication} disabled={loading}>
+              {loading ? <ActivityIndicator color={theme.buttonText} /> : (
+                <Text style={[styles.mainBtnText, { color: theme.buttonText }]}>{isLogin ? 'Initiate Login' : 'Continue to Config'}</Text>
               )}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.switchBtn}>
-              <Text style={styles.switchText}>
+              <Text style={[styles.switchText, { color: theme.textGrey }]}>
                 {isLogin ? "New user? Enroll here" : "Return to secure login"}
               </Text>
             </TouchableOpacity>
@@ -190,58 +212,74 @@ export default function LoginScreen() {
 
         {step === 2 && (
           <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
-            <Text style={styles.title}>Neural Config</Text>
-            <Text style={styles.subtitle}>Help Valen AI understand your trajectory.</Text>
+            <Text style={[styles.title, { color: theme.textDark }]}>Neural Config</Text>
+            <Text style={[styles.subtitle, { color: theme.textGrey }]}>Help Valen AI understand your trajectory.</Text>
 
-            <Text style={styles.label}>What is your current profession?</Text>
-            <TextInput style={styles.input} placeholder="e.g. Software Engineer, Student" value={profession} onChangeText={setProfession} />
+            <Text style={[styles.label, { color: theme.textGrey }]}>What is your current profession?</Text>
+            <TextInput 
+              style={[styles.input, { backgroundColor: theme.inputBg, color: theme.textDark, borderColor: theme.border }]} 
+              placeholder="e.g. Software Engineer, Student" 
+              placeholderTextColor={theme.textGrey}
+              value={profession} 
+              onChangeText={setProfession} 
+            />
 
-            <Text style={styles.label}>Primary Focus Objective?</Text>
-            <TextInput style={styles.input} placeholder="e.g. Master React Native, Pass Exams" value={primaryGoal} onChangeText={setPrimaryGoal} />
+            <Text style={[styles.label, { color: theme.textGrey }]}>Primary Focus Objective?</Text>
+            <TextInput 
+              style={[styles.input, { backgroundColor: theme.inputBg, color: theme.textDark, borderColor: theme.border }]} 
+              placeholder="e.g. Master React Native, Pass Exams" 
+              placeholderTextColor={theme.textGrey}
+              value={primaryGoal} 
+              onChangeText={setPrimaryGoal} 
+            />
 
-            <Text style={styles.label}>Focus Style Preference?</Text>
+            <Text style={[styles.label, { color: theme.textGrey }]}>Focus Style Preference?</Text>
             <View style={styles.choiceRow}>
                 {['Deep Work', 'Pomodoro', 'Flow'].map(style => (
                     <TouchableOpacity 
                         key={style} 
-                        style={[styles.choiceBtn, focusStyle === style && styles.activeChoice]} 
+                        style={[
+                            styles.choiceBtn, 
+                            { backgroundColor: theme.inputBg, borderColor: theme.border },
+                            focusStyle === style && styles.activeChoice
+                        ]} 
                         onPress={() => setFocusStyle(style)}
                     >
-                        <Text style={[styles.choiceText, focusStyle === style && styles.activeChoiceText]}>{style}</Text>
+                        <Text style={[styles.choiceText, { color: theme.textGrey }, focusStyle === style && styles.activeChoiceText]}>{style}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
 
-            <TouchableOpacity style={styles.mainBtn} onPress={() => setStep(3)}>
-                <Text style={styles.mainBtnText}>Continue to Visual ID</Text>
+            <TouchableOpacity style={[styles.mainBtn, { backgroundColor: theme.button }]} onPress={() => setStep(3)}>
+                <Text style={[styles.mainBtnText, { color: theme.buttonText }]}>Continue to Visual ID</Text>
             </TouchableOpacity>
           </ScrollView>
         )}
 
         {step === 3 && (
           <View style={{ width: '100%', alignItems: 'center' }}>
-            <Text style={styles.title}>Visual ID</Text>
-            <Text style={styles.subtitle}>Upload a profile photo to finalize your Neural ID.</Text>
+            <Text style={[styles.title, { color: theme.textDark }]}>Visual ID</Text>
+            <Text style={[styles.subtitle, { color: theme.textGrey }]}>Upload a profile photo to finalize your Neural ID.</Text>
 
-            <TouchableOpacity onPress={pickImage} style={styles.avatarPicker}>
+            <TouchableOpacity onPress={pickImage} style={[styles.avatarPicker, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
                 {profileImage ? (
                     <Image source={{ uri: profileImage }} style={styles.avatarLarge} />
                 ) : (
                     <View style={styles.avatarPlaceholder}>
-                        <Ionicons name="camera" size={40} color={TEXT_GREY} />
-                        <Text style={{ fontSize: 10, color: TEXT_GREY, marginTop: 10 }}>SELECT PHOTO</Text>
+                        <Ionicons name="camera" size={40} color={theme.textGrey} />
+                        <Text style={{ fontSize: 10, color: theme.textGrey, marginTop: 10 }}>SELECT PHOTO</Text>
                     </View>
                 )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.mainBtn} onPress={finalizeOnboarding} disabled={loading}>
-              {loading ? <ActivityIndicator color="#FFF" /> : (
-                <Text style={styles.mainBtnText}>Finalize Enrollment</Text>
+            <TouchableOpacity style={[styles.mainBtn, { backgroundColor: theme.button }]} onPress={finalizeOnboarding} disabled={loading}>
+              {loading ? <ActivityIndicator color={theme.buttonText} /> : (
+                <Text style={[styles.mainBtnText, { color: theme.buttonText }]}>Finalize Enrollment</Text>
               )}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setStep(2)} style={styles.switchBtn}>
-                <Text style={styles.switchText}>Go back to Config</Text>
+                <Text style={[styles.switchText, { color: theme.textGrey }]}>Go back to Config</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -251,31 +289,31 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: CREAM_BG, justifyContent: 'center', alignItems: 'center' },
-  card: { backgroundColor: CARD_WHITE, width: '92%', borderRadius: 32, padding: 30, alignItems: 'center', elevation: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 15 },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  card: { width: '92%', borderRadius: 32, padding: 30, alignItems: 'center', elevation: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 15 },
   
   // LOGO WITH ROUNDED EDGES
   logo: { width: 90, height: 90, marginBottom: 20, borderRadius: 22 },
   
-  title: { fontSize: 24, fontWeight: '900', color: TEXT_DARK, letterSpacing: -0.5 },
-  subtitle: { color: TEXT_GREY, textAlign: 'center', marginBottom: 25, fontSize: 13, fontWeight: '500', lineHeight: 18 },
-  label: { alignSelf: 'flex-start', fontSize: 11, fontWeight: '800', color: TEXT_GREY, textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
-  input: { width: '100%', backgroundColor: '#F8F8F6', borderWidth: 1, borderColor: '#EEE', height: 55, borderRadius: 16, paddingHorizontal: 15, marginBottom: 20, fontSize: 15, fontWeight: '600', color: TEXT_DARK },
+  title: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
+  subtitle: { textAlign: 'center', marginBottom: 25, fontSize: 13, fontWeight: '500', lineHeight: 18 },
+  label: { alignSelf: 'flex-start', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
+  input: { width: '100%', borderWidth: 1, height: 55, borderRadius: 16, paddingHorizontal: 15, marginBottom: 20, fontSize: 15, fontWeight: '600' },
   
   choiceRow: { flexDirection: 'row', gap: 10, marginBottom: 25 },
-  choiceBtn: { flex: 1, height: 45, borderRadius: 12, backgroundColor: '#F8F8F6', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
+  choiceBtn: { flex: 1, height: 45, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
   activeChoice: { backgroundColor: MINT_GREEN, borderColor: MINT_GREEN },
-  choiceText: { fontSize: 12, fontWeight: '700', color: TEXT_GREY },
+  choiceText: { fontSize: 12, fontWeight: '700' },
   activeChoiceText: { color: '#FFF' },
 
-  avatarPicker: { width: 150, height: 150, borderRadius: 75, backgroundColor: '#F8F8F6', borderStyle: 'dashed', borderWidth: 2, borderColor: '#DDD', justifyContent: 'center', alignItems: 'center', marginBottom: 30, overflow: 'hidden' },
+  avatarPicker: { width: 150, height: 150, borderRadius: 75, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginBottom: 30, overflow: 'hidden' },
   avatarLarge: { width: 150, height: 150 },
   avatarPlaceholder: { alignItems: 'center' },
 
   forgotBtn: { alignSelf: 'flex-end', marginBottom: 25 },
   forgotText: { color: MINT_GREEN, fontSize: 12, fontWeight: '700' },
-  mainBtn: { backgroundColor: TEXT_DARK, width: '100%', height: 60, borderRadius: 18, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8 },
-  mainBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  mainBtn: { width: '100%', height: 60, borderRadius: 18, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8 },
+  mainBtnText: { fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
   switchBtn: { marginTop: 25 },
-  switchText: { color: TEXT_GREY, fontSize: 13, fontWeight: '600' }
+  switchText: { fontSize: 13, fontWeight: '600' }
 });

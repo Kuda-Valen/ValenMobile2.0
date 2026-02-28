@@ -12,6 +12,7 @@ export const NotificationService = {
 
   // 2. Schedule Task Deadlines
   scheduleTaskReminder: async (taskId: string, title: string, date: Date) => {
+    // SURGICAL FIX: Using string 'date' instead of Enum to prevent "undefined" crash
     await Notifications.scheduleNotificationAsync({
       identifier: taskId,
       content: {
@@ -20,7 +21,10 @@ export const NotificationService = {
         sound: 'default',
         data: { screen: 'Tasks' },
       },
-      trigger: date,
+      trigger: {
+        type: 'date',
+        date: date,
+      } as any,
     });
   },
 
@@ -36,10 +40,10 @@ export const NotificationService = {
         sound: 'default',
       },
       trigger: {
+        type: 'daily',
         hour,
         minute: 0,
-        repeats: true,
-      },
+      } as any,
     });
   },
 
@@ -52,10 +56,10 @@ export const NotificationService = {
         sound: 'default',
       },
       trigger: {
+        type: 'daily',
         hour: 14, // 2 PM
         minute: 0,
-        repeats: true,
-      },
+      } as any,
     });
   },
 
@@ -68,9 +72,9 @@ export const NotificationService = {
   sendImmediateAlert: async (title: string, body: string) => {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, sound: 'default' },
-      trigger: null,
+      trigger: null, // null is still valid for immediate delivery
     });
-  }, // <--- FIXED: Added missing comma here
+  },
 
   // 7. Academic Session Active (Persistent Notification)
   startLiveSessionNotification: async (moduleName: string, minutesRemaining: number, isBreak: boolean) => {
@@ -93,7 +97,6 @@ export const NotificationService = {
     });
 
     // 2. Schedule completion alert
-    // Note: Trigger uses seconds. If minutesRemaining is 0, we avoid scheduling a past trigger.
     const seconds = Math.max(minutesRemaining * 60, 1);
 
     await Notifications.scheduleNotificationAsync({
@@ -104,7 +107,11 @@ export const NotificationService = {
         sound: 'default',
         vibrate: [0, 250, 250, 250],
       },
-      trigger: { seconds: seconds },
+      trigger: { 
+        type: 'timeInterval',
+        seconds: seconds,
+        repeats: false 
+      } as any,
     });
   },
 

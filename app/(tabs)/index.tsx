@@ -98,12 +98,13 @@ const PremiumRing = ({ progress, size, strokeWidth, activeColor, trackColor, col
 
 export default function Dashboard() {
   const router = useRouter();
+  const valenContext = useValen(); // Defined for the reset logic
   const { 
     profile, tasks, folders, modules, addTask, toggleTaskCompletion,
     visions, updateVisionProgress,
     religiousActivities, fitnessActivities,
     toggleFaithCompletion, toggleFitnessCompletion
-  } = useValen();
+  } = valenContext;
 
   // --- THEME LOGIC ---
   const isDark = profile?.theme === 'dark';
@@ -120,6 +121,34 @@ export default function Dashboard() {
   const today = new Date();
   const [selectedDate, setSelectedDate] = useState(today.getDate());
   const [fullCalendarVisible, setFullCalendarVisible] = useState(false); 
+
+  // --- NEW: DAILY RESET LOGIC (WITH LOOP PREVENTION) ---
+  const [hasResetToday, setHasResetToday] = useState(false);
+
+  useEffect(() => {
+    const checkDailyReset = async () => {
+      // Guard: stop if profile isn't ready or we already performed a reset this session
+      if (!profile || hasResetToday) return;
+
+      const now = new Date();
+      // Generate key: "20-1-2026"
+      const todayKey = `${now.getDate()}-${now.getMonth()}-${now.getFullYear()}`;
+      const lastResetDate = profile?.lastResetDate;
+
+      // Only trigger if database date differs from actual date
+      if (lastResetDate !== todayKey) {
+        setHasResetToday(true); // Lock the gate immediately
+        console.log("System Date Mismatch: Triggering Daily Discipline Reset...");
+        
+        if (valenContext.resetDailyDisciplines) {
+           await valenContext.resetDailyDisciplines(todayKey);
+        }
+      }
+    };
+
+    checkDailyReset();
+  }, [profile?.lastResetDate]); // Only re-run if the reset date in the DB changes
+  // --- END RESET LOGIC ---
   
   const greeting = useMemo(() => {
     const hour = today.getHours();
